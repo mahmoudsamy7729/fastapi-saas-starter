@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from fastapi import HTTPException
 from unittest.mock import AsyncMock, Mock, ANY
 
-from src.billing.service import PlanService, SubscriptionService
+from src.billing.service import PlanService, SubscriptionService, PaymentService
 from src.billing.schemas import PlanCreate, PlanUpdate
 from src.billing.models import BillingPeriod, PaymentProvider
 from src.billing.utils import serialize_subscription
@@ -37,9 +37,25 @@ async def test_retrieve_plans():
 async def test_create_plan_updates_stripe_ids(monkeypatch):
     repo = Mock()
     repo.get_by_code = AsyncMock(return_value=None)
-    created_plan = SimpleNamespace(id=uuid4(), stripe_product_id=None, stripe_price_id=None)
+    created_plan = SimpleNamespace(
+        id=uuid4(),
+        code="BASIC",
+        name="Basic",
+        price_cents=10,
+        currency="USD",
+        stripe_product_id=None,
+        stripe_price_id=None,
+    )
     repo.create = AsyncMock(return_value=created_plan)
-    updated_plan = SimpleNamespace(id=created_plan.id, stripe_product_id="prod_1", stripe_price_id="price_1")
+    updated_plan = SimpleNamespace(
+        id=created_plan.id,
+        code="BASIC",
+        name="Basic",
+        price_cents=10,
+        currency="USD",
+        stripe_product_id="prod_1",
+        stripe_price_id="price_1",
+    )
     repo.update = AsyncMock(return_value=updated_plan)
 
     stripe_mock = AsyncMock(return_value=SimpleNamespace(stripe_product_id="prod_1", stripe_price_id="price_1"))
@@ -56,7 +72,7 @@ async def test_create_plan_updates_stripe_ids(monkeypatch):
 async def test_create_plan_skips_stripe_when_failing(monkeypatch):
     repo = Mock()
     repo.get_by_code = AsyncMock(return_value=None)
-    created_plan = SimpleNamespace(id=uuid4())
+    created_plan = SimpleNamespace(id=uuid4(), code="BASIC", name="Basic", price_cents=10, currency="USD")
     repo.create = AsyncMock(return_value=created_plan)
     repo.update = AsyncMock()
 
@@ -95,7 +111,7 @@ async def test_update_plan_success(monkeypatch):
     plan = Mock()
     repo = Mock()
     repo.get_by_id = AsyncMock(return_value=plan)
-    repo.update = AsyncMock(return_value={"updated": True})
+    repo.update = AsyncMock(return_value=SimpleNamespace(id=uuid4(), code="CODE", updated=True))
 
     update_data = {"price_cents": 25}
     monkeypatch.setattr("src.billing.service.StripeGateway.update_plan_in_stripe", AsyncMock(return_value=update_data))
@@ -104,7 +120,7 @@ async def test_update_plan_success(monkeypatch):
 
     result = await PlanService.update_plan(uuid4(), data, repo)
 
-    assert result == {"updated": True}
+    assert result.updated is True
     repo.update.assert_awaited_once_with(plan, update_data)
 
 
@@ -143,12 +159,13 @@ async def test_soft_delete_plan_not_found():
 
 async def test_get_user_subscription_success():
     repo = Mock()
-    repo.get_subscription_with_access = AsyncMock(return_value="subscription")
+    subscription_obj = SimpleNamespace(id=uuid4(), provider=PaymentProvider.STRIPE)
+    repo.get_subscription_with_access = AsyncMock(return_value=subscription_obj)
 
     user_id = uuid4()
     result = await SubscriptionService.get_user_subscription(user_id, repo)
 
-    assert result == "subscription"
+    assert result == subscription_obj
     repo.get_subscription_with_access.assert_awaited_once_with(user_id)
 
 
@@ -161,7 +178,7 @@ async def test_get_user_subscription_not_found():
 
 
 async def test_subscribe_user_success(monkeypatch):
-    user = SimpleNamespace(id=uuid4())
+    user = SimpleNamespace(id=uuid4(), email="user@test.com")
 
     sub_repo = Mock()
     sub_repo.get_subscription_with_access = AsyncMock(return_value=None)
@@ -185,11 +202,11 @@ async def test_subscribe_user_success(monkeypatch):
 
 async def test_subscribe_user_already_has_subscription():
     sub_repo = Mock()
-    sub_repo.get_subscription_with_access = AsyncMock(return_value="active")
+    sub_repo.get_subscription_with_access = AsyncMock(return_value=SimpleNamespace(id=uuid4()))
 
     with pytest.raises(HTTPException) as exc:
         await SubscriptionService.subscribe_user_to_plan(
-            SimpleNamespace(id=uuid4()), "BASIC", sub_repo, Mock(), Mock()
+            SimpleNamespace(id=uuid4(), email="u@test.com"), "BASIC", sub_repo, Mock(), Mock()
         )
 
     assert exc.value.detail == "User already has an active subscription."
@@ -204,7 +221,7 @@ async def test_subscribe_user_plan_not_found():
 
     with pytest.raises(HTTPException) as exc:
         await SubscriptionService.subscribe_user_to_plan(
-            SimpleNamespace(id=uuid4()), "UNKNOWN", sub_repo, plan_repo, Mock()
+            SimpleNamespace(id=uuid4(), email="u@test.com"), "UNKNOWN", sub_repo, plan_repo, Mock()
         )
 
     assert exc.value.detail == "No active plan found for this code."
@@ -212,6 +229,7 @@ async def test_subscribe_user_plan_not_found():
 
 async def test_cancel_subscription_success(monkeypatch):
     subscription = SimpleNamespace(
+        id=uuid4(),
         cancel_at_period_end=False,
         provider=PaymentProvider.STRIPE,
         provider_subscription_id="sub_test",
@@ -220,7 +238,14 @@ async def test_cancel_subscription_success(monkeypatch):
 
     sub_repo = Mock()
     sub_repo.get_subscription_with_access = AsyncMock(return_value=subscription)
-    sub_repo.cancel_subscription = AsyncMock(return_value=SimpleNamespace(cancel_at_period_end=False, status="canceled"))
+    sub_repo.cancel_subscription = AsyncMock(
+        return_value=SimpleNamespace(
+            id=uuid4(),
+            provider=PaymentProvider.STRIPE,
+            cancel_at_period_end=False,
+            status="canceled",
+        )
+    )
 
     monkeypatch.setattr(
         "src.billing.service.StripeGateway.cancel_subscription_at_period_end",
@@ -239,7 +264,7 @@ async def test_cancel_subscription_success(monkeypatch):
 
 
 async def test_cancel_subscription_already_marked():
-    subscription = SimpleNamespace(cancel_at_period_end=True)
+    subscription = SimpleNamespace(id=uuid4(), cancel_at_period_end=True)
     sub_repo = Mock()
     sub_repo.get_subscription_with_access = AsyncMock(return_value=subscription)
 
@@ -283,7 +308,7 @@ async def test_cancel_subscription_missing_local_record(monkeypatch):
 
 
 async def test_upgrade_subscription_success(monkeypatch):
-    user = SimpleNamespace(id=uuid4())
+    user = SimpleNamespace(id=uuid4(), email="user@test.com")
     current_sub = SimpleNamespace(
         provider=PaymentProvider.STRIPE,
         provider_subscription_id="sub_old",
@@ -316,7 +341,7 @@ async def test_upgrade_subscription_same_plan():
     plan_repo.get_by_code = AsyncMock(return_value=SimpleNamespace(id=plan_id))
 
     with pytest.raises(HTTPException) as exc:
-        await SubscriptionService.upgrade_subscription(SimpleNamespace(id=uuid4()), "CODE", sub_repo, plan_repo, Mock())
+        await SubscriptionService.upgrade_subscription(SimpleNamespace(id=uuid4(), email="u@test.com"), "CODE", sub_repo, plan_repo, Mock())
 
     assert exc.value.detail == "You are already on this plan."
 
@@ -329,7 +354,7 @@ async def test_upgrade_subscription_plan_not_found():
     plan_repo.get_by_code = AsyncMock(return_value=None)
 
     with pytest.raises(HTTPException) as exc:
-        await SubscriptionService.upgrade_subscription(SimpleNamespace(id=uuid4()), "CODE", sub_repo, plan_repo, Mock())
+        await SubscriptionService.upgrade_subscription(SimpleNamespace(id=uuid4(), email="u@test.com"), "CODE", sub_repo, plan_repo, Mock())
 
     assert exc.value.detail == "Plan not found."
 
@@ -339,7 +364,7 @@ async def test_upgrade_subscription_no_active():
     sub_repo.get_subscription_with_access = AsyncMock(return_value=None)
 
     with pytest.raises(HTTPException) as exc:
-        await SubscriptionService.upgrade_subscription(SimpleNamespace(id=uuid4()), "CODE", sub_repo, Mock(), Mock())
+        await SubscriptionService.upgrade_subscription(SimpleNamespace(id=uuid4(), email="u@test.com"), "CODE", sub_repo, Mock(), Mock())
 
     assert exc.value.detail == "No active subscription to upgrade."
 
@@ -381,6 +406,7 @@ async def test_stripe_webhook_invoice_payment(monkeypatch, mock_send_update_subs
 
     updated_sub = SimpleNamespace(
         id=uuid4(),
+        user_id=uuid4(),
         user=SimpleNamespace(email="e", username="u"),
         plan=SimpleNamespace(name="Plan", price_cents=5000),
         started_at=datetime.now(timezone.utc),
@@ -409,12 +435,74 @@ async def test_stripe_webhook_invoice_payment(monkeypatch, mock_send_update_subs
     record_payment_mock.assert_awaited_once_with(invoice, updated_sub, payment_repo)
 
 
-async def test_stripe_webhook_subscription_deleted(monkeypatch):
+async def test_stripe_webhook_invoice_payment_failed(monkeypatch, mock_send_payment_failed_email_task):
+    invoice = {
+        "lines": {"data": [{"parent": {"subscription_item_details": {"subscription": "sub_999"}}}]},
+        "billing_reason": "subscription_cycle",
+        "id": "in_failed",
+    }
+    event = {"type": "invoice.payment_failed", "data": {"object": invoice}}
+    run_mock = AsyncMock(return_value=event)
+    monkeypatch.setattr("src.billing.service.run_in_threadpool", run_mock)
+
+    failed_sub = SimpleNamespace(
+        id=uuid4(),
+        user_id=uuid4(),
+        user=SimpleNamespace(email="fail@test.com", username="user"),
+        plan=SimpleNamespace(name="Plan", price_cents=5000),
+        started_at=datetime.now(timezone.utc),
+        current_period_end=datetime.now(timezone.utc),
+    )
+    handler = AsyncMock(return_value=failed_sub)
+    monkeypatch.setattr("src.billing.service.StripeGateway.handle_invoice_payment_failed", handler)
+
+    request = _dummy_request(b"{}")
+    sub_repo = Mock()
+
+    result = await SubscriptionService.stripe_webhook(request, "sig", sub_repo, Mock(), Mock())
+
+    assert result is None
+    handler.assert_awaited_once_with(invoice, sub_repo)
+    mock_send_payment_failed_email_task.assert_called_once_with(serialize_subscription(failed_sub))
+
+
+async def test_stripe_webhook_invoice_payment_failed_without_subscription(monkeypatch, mock_send_payment_failed_email_task):
+    invoice = {
+        "lines": {"data": [{"parent": {"subscription_item_details": {"subscription": "sub_999"}}}]},
+        "billing_reason": "subscription_cycle",
+        "id": "in_failed",
+    }
+    event = {"type": "invoice.payment_failed", "data": {"object": invoice}}
+    run_mock = AsyncMock(return_value=event)
+    monkeypatch.setattr("src.billing.service.run_in_threadpool", run_mock)
+
+    handler = AsyncMock(return_value=None)
+    monkeypatch.setattr("src.billing.service.StripeGateway.handle_invoice_payment_failed", handler)
+
+    request = _dummy_request(b"{}")
+    sub_repo = Mock()
+
+    result = await SubscriptionService.stripe_webhook(request, "sig", sub_repo, Mock(), Mock())
+
+    assert result is None
+    handler.assert_awaited_once_with(invoice, sub_repo)
+    mock_send_payment_failed_email_task.assert_not_called()
+
+
+async def test_stripe_webhook_subscription_deleted(monkeypatch, mock_send_cancel_subscription_email_task):
     event = {"type": "customer.subscription.deleted", "data": {"object": {"id": "sub_123"}}}
     run_mock = AsyncMock(return_value=event)
     monkeypatch.setattr("src.billing.service.run_in_threadpool", run_mock)
 
-    handler = AsyncMock()
+    canceled_sub = SimpleNamespace(
+        id=uuid4(),
+        user_id=uuid4(),
+        user=SimpleNamespace(email="e", username="u"),
+        plan=SimpleNamespace(name="Plan", price_cents=5000),
+        started_at=datetime.now(timezone.utc),
+        current_period_end=datetime.now(timezone.utc),
+    )
+    handler = AsyncMock(return_value=canceled_sub)
     monkeypatch.setattr("src.billing.service.StripeGateway.handle_subscription_deleted", handler)
 
     request = _dummy_request(b"{}")
@@ -425,6 +513,7 @@ async def test_stripe_webhook_subscription_deleted(monkeypatch):
 
     assert result is None
     handler.assert_awaited_once_with(event["data"]["object"], sub_repo)
+    mock_send_cancel_subscription_email_task.assert_called_once_with(serialize_subscription(canceled_sub))
 
 
 async def test_stripe_webhook_invalid_signature(monkeypatch):
@@ -436,3 +525,14 @@ async def test_stripe_webhook_invalid_signature(monkeypatch):
     response = await SubscriptionService.stripe_webhook(request, "sig", Mock(), Mock(), Mock())
 
     assert response == {"error": "bad signature"}
+
+
+async def test_payment_service_get_my_payments():
+    user = SimpleNamespace(id=uuid4())
+    repo = Mock()
+    repo.get_my_payments = AsyncMock(return_value=["payment1", "payment2"])
+
+    result = await PaymentService.get_my_payments(user, repo)
+
+    assert result == ["payment1", "payment2"]
+    repo.get_my_payments.assert_awaited_once_with(user.id)

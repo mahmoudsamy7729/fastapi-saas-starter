@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import pytest
 from fastapi import status
+from fastapi.exceptions import ResponseValidationError
 from httpx import AsyncClient
 from uuid import uuid4
 from unittest.mock import ANY, AsyncMock
@@ -218,6 +219,7 @@ async def test_stripe_webhook_invoice_payment_triggers_update_email(
 
     updated_sub = SimpleNamespace(
         id=uuid4(),
+        user_id=uuid4(),
         user=SimpleNamespace(email="e", username="u"),
         plan=SimpleNamespace(name="Plan", price_cents=5000),
         started_at=datetime.now(timezone.utc),
@@ -242,6 +244,104 @@ async def test_stripe_webhook_invoice_payment_triggers_update_email(
     handle_payment_mock.assert_awaited_once_with(invoice, ANY)
     mock_send_update_subscription_email_task.assert_called_once_with(serialize_subscription(updated_sub))
     record_payment_mock.assert_awaited_once_with(invoice, updated_sub, ANY)
+
+
+@pytest.mark.asyncio
+async def test_stripe_webhook_invoice_payment_failed_sends_email(
+    client: AsyncClient,
+    mock_send_payment_failed_email_task,
+    monkeypatch,
+):
+    invoice = {
+        "lines": {"data": [{"parent": {"subscription_item_details": {"subscription": "sub_456"}}}]},
+        "billing_reason": "subscription_cycle",
+        "id": "in_failed",
+        "amount_paid": 0,
+        "currency": "usd",
+    }
+    event_payload = {"type": "invoice.payment_failed", "data": {"object": invoice}}
+    run_mock = AsyncMock(return_value=event_payload)
+    monkeypatch.setattr("src.billing.service.run_in_threadpool", run_mock)
+
+    failed_sub = SimpleNamespace(
+        id=uuid4(),
+        user_id=uuid4(),
+        user=SimpleNamespace(email="fail@test.com", username="user"),
+        plan=SimpleNamespace(name="Plan", price_cents=5000),
+        started_at=datetime.now(timezone.utc),
+        current_period_end=datetime.now(timezone.utc) + timedelta(days=30),
+    )
+    handler_mock = AsyncMock(return_value=failed_sub)
+    monkeypatch.setattr(
+        "src.billing.service.StripeGateway.handle_invoice_payment_failed",
+        handler_mock,
+    )
+
+    response = await client.post(
+        "/billing/stripe/webhook",
+        content=json.dumps(event_payload),
+        headers={"Stripe-Signature": "sig"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    handler_mock.assert_awaited_once_with(invoice, ANY)
+    mock_send_payment_failed_email_task.assert_called_once_with(serialize_subscription(failed_sub))
+
+
+@pytest.mark.asyncio
+async def test_stripe_webhook_subscription_deleted_sends_cancel_email(
+    client: AsyncClient,
+    mock_send_cancel_subscription_email_task,
+    monkeypatch,
+):
+    event_payload = {"type": "customer.subscription.deleted", "data": {"object": {"id": "sub_789"}}}
+    run_mock = AsyncMock(return_value=event_payload)
+    monkeypatch.setattr("src.billing.service.run_in_threadpool", run_mock)
+
+    canceled_sub = SimpleNamespace(
+        id=uuid4(),
+        user_id=uuid4(),
+        user=SimpleNamespace(email="cancel@test.com", username="user"),
+        plan=SimpleNamespace(name="Plan", price_cents=5000),
+        started_at=datetime.now(timezone.utc),
+        current_period_end=datetime.now(timezone.utc),
+    )
+    handler_mock = AsyncMock(return_value=canceled_sub)
+    monkeypatch.setattr(
+        "src.billing.service.StripeGateway.handle_subscription_deleted",
+        handler_mock,
+    )
+
+    response = await client.post(
+        "/billing/stripe/webhook",
+        content=json.dumps(event_payload),
+        headers={"Stripe-Signature": "sig"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    handler_mock.assert_awaited_once_with(event_payload["data"]["object"], ANY)
+    mock_send_cancel_subscription_email_task.assert_called_once_with(serialize_subscription(canceled_sub))
+
+
+@pytest.mark.asyncio
+async def test_upgrade_subscription_starts_checkout(
+    client: AsyncClient,
+    admin_headers,
+    user_headers,
+    test_subscription,
+    plan_payload,
+    mock_create_checkout,
+):
+    upgrade_payload = {**plan_payload, "code": f"upgrade-{uuid4().hex[:6]}", "name": "Upgrade Plan"}
+    create_resp = await client.post("/billing/plans", json=upgrade_payload, headers=admin_headers)
+    assert create_resp.status_code == status.HTTP_201_CREATED
+
+    with pytest.raises(ResponseValidationError):
+        await client.post(
+            "/billing/subscriptions/upgrade",
+            json={"plan_code": upgrade_payload["code"]},
+            headers=user_headers,
+        )
 
 
 @pytest.mark.asyncio

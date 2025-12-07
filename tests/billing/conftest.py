@@ -61,13 +61,31 @@ def mock_send_update_subscription_email_task(monkeypatch):
     return delay_mock
 
 
+@pytest.fixture(autouse=True)
+def mock_send_cancel_subscription_email_task(monkeypatch):
+    delay_mock = MagicMock()
+    task_mock = MagicMock(delay=delay_mock)
+    monkeypatch.setattr("src.billing.service.send_cancel_subscription_email_task", task_mock)
+    return delay_mock
+
+
+@pytest.fixture(autouse=True)
+def mock_send_payment_failed_email_task(monkeypatch):
+    delay_mock = MagicMock()
+    task_mock = MagicMock(delay=delay_mock)
+    monkeypatch.setattr("src.billing.service.send_payment_failed_email_task", task_mock)
+    return delay_mock
+
+
 @pytest.fixture()
 async def fake_subscription(normal_user, test_plan):
     now = datetime.now(timezone.utc)
     return SimpleNamespace(
         id=uuid4(),
+        user_id=normal_user.id,
         user=normal_user,
         plan=test_plan,
+        plan_id=test_plan.id,
         started_at=now,
         current_period_end=now + timedelta(days=30),
         cancel_at_period_end=False,

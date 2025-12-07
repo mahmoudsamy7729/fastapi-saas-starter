@@ -10,6 +10,9 @@ from src.repository import RefreshTokenRepository
 from src.auth import utils, schemas
 from src.auth.repository import UserRepository, LoginCodeRepository
 from src.auth.models import User, Provider
+from src.logging import get_logger
+
+logger = get_logger("auth")
 
 
 
@@ -31,6 +34,7 @@ class UserService:
             password = await hash_password(user_data.password),
             provider = Provider.LOCAL
         )
+        logger.info(f"User registered user_id={str(new_user.id)} email={new_user.email} provider=LOCAL")
         return await repo.create(new_user)
     
 
@@ -39,14 +43,18 @@ class UserService:
         user = await repo.get_by_email(user_data.email)
         if user and await verify_password(user_data.password, user.password):
             if not user.is_active:
+                logger.warning(f"Login attempt for disabled user user_id={str(user.id)} email={user.email}")
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is disabled")
             data = {"sub": str(user.id), "email": user.email, "username": user.username}
             access_token, _, _ = generate_token(data, settings.access_token_expire, settings.access_secret_key)
             refresh_token, jti, exp = generate_token(data, settings.refresh_token_expire, settings.refresh_secret_key)
             await store_refresh_token_in_db(user.id, jti, refresh_token, exp, token_repo)
+            logger.info(f"User login successful user_id = {str(user.id)} email = {user.email} method=password")
             return access_token, user, refresh_token
+        
     
         else:
+            logger.warning(f"Failed login attempt for email={user_data.email}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password",
@@ -58,6 +66,7 @@ class UserService:
     async def refresh_token(request: Request, token_repo: RefreshTokenRepository):
         refresh_token = request.cookies.get("refresh_token")
         if not refresh_token:
+            logger.warning("Refresh token missing in cookies")
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token is missing.")
         payload = verify_token(refresh_token, settings.refresh_secret_key)
 
@@ -80,7 +89,8 @@ class UserService:
             token_hash = await hash_password(refresh_token),
             expires_at = exp
         )
-        await revoke_refresh_token(new_token, old_token, token_repo)        
+        await revoke_refresh_token(new_token, old_token, token_repo)
+        logger.info(f"Refresh token rotated user_id={payload.get("sub")} jti={jti}")        
         return access_token, refresh_token
 
         
@@ -92,6 +102,7 @@ class UserService:
         user = await repo.get_by_id(user_id)
 
         if user is None: 
+            logger.warning(f"Email validation failed: user not found user_id={str(user_id)}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication credentials"
@@ -101,12 +112,14 @@ class UserService:
             return False
         user.is_verified = True 
         await repo.update(user)
+        logger.info(f"User email verified user_id={str(user.id)} email={user.email}")
         return True
 
 
     @staticmethod
     async def forget_password(data: schemas.ForgetPasswordRequest, repo: UserRepository) -> User | None:
         user = await repo.get_by_email(data.email)
+        logger.info(f"Password reset requested email={data.email}")
         return user
 
 
@@ -124,12 +137,14 @@ class UserService:
         
         user.password = await hash_password(data.password)
         await repo.update(user)
+        logger.info(f"Password reset successfully user_id={str(user.id)} email={user.email}")
         return True
 
 
     @staticmethod 
     async def change_password(data: schemas.ChangePasswordRequest, repo: UserRepository, current_user: User) -> bool:
         if not await verify_password(data.old_password, current_user.password):
+            logger.warning("Change password failed: wrong old password user_id={str(current_user.id)} email={current_user.email}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Old password isn't correct."
@@ -137,6 +152,7 @@ class UserService:
 
         current_user.password = await hash_password(data.new_password)
         await repo.update(current_user)
+        logger.info(f"Password changed user_id={str(current_user.id)} email={current_user.email}")
         return True
 
 
@@ -151,6 +167,7 @@ class UserService:
         login_code, code = await utils.generate_otp_code(user.id) 
         await code_repo.delete(user.id) 
         await code_repo.create(login_code)
+        logger.info(f"Login code generated and stored user_id={str(user.id)} email={user.email}")
         return user, code
 
 
@@ -158,6 +175,7 @@ class UserService:
     async def login_with_code(data: schemas.LoginWithCodeRequest, user_repo: UserRepository, code_repo: LoginCodeRepository, token_repo: RefreshTokenRepository):
         user = await user_repo.get_by_email(data.email)
         if not user:
+            logger.warning(f"Login with code failed: invalid email email={data.email}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid code or email."
@@ -165,6 +183,7 @@ class UserService:
         
         login_code = await code_repo.get_latest_for_user(user.id)
         if not login_code:
+            logger.warning(f"Login with code failed: no login_code user_id={str(user.id)}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid code or email."
@@ -172,12 +191,14 @@ class UserService:
         
         if login_code.expires_at < datetime.now(UTC):
             await code_repo.delete(user.id) 
+            logger.warning(f"Login with code failed: code expired user_id={str(user.id)}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Code has expired."
             )
         
         if not await verify_password(data.code, login_code.code_hash):
+            logger.warning(f"Login with code failed: wrong code user_id={str(user.id)}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid code or email."
@@ -192,6 +213,7 @@ class UserService:
         access_token, _, _ = generate_token(user_data, settings.access_token_expire, settings.access_secret_key)
         refresh_token, jti, exp = generate_token(user_data, settings.refresh_token_expire, settings.refresh_secret_key)
         await store_refresh_token_in_db(user.id, jti, refresh_token, exp, token_repo)          
+        logger.info(f"User login successful user_id={str(user.id)}, email={user.email}, method=otp")
         return access_token, user, refresh_token
 
         
@@ -215,11 +237,13 @@ class UserService:
                 is_verified = True
             ) 
             user = await repo.create(user)
+            logger.info(f"New user created via Google user_id={str(user.id)}, email={user.email}")
 
         user_data = {"sub": str(user.id), "email": user.email, "username": user.username}
         access_token, _, _ = generate_token(user_data, settings.access_token_expire, settings.access_secret_key)
         refresh_token, jti, exp = generate_token(user_data, settings.refresh_token_expire, settings.refresh_secret_key)
         await store_refresh_token_in_db(user.id, jti, refresh_token, exp, token_repo)        
+        logger.info(f"User login successful user_id={str(user.id)} method=google")
         return access_token, user, refresh_token
         
 
@@ -248,11 +272,13 @@ class UserService:
                 is_verified = True
             ) 
             user = await repo.create(user)
+            logger.info(f"New user created via Github user_id={str(user.id)}, email={user.email}")
 
         user_data = {"sub": str(user.id), "email": user.email, "username": user.username}
         access_token, _, _ = generate_token(user_data, settings.access_token_expire, settings.access_secret_key)
         refresh_token, jti, exp = generate_token(user_data, settings.refresh_token_expire, settings.refresh_secret_key)
         await store_refresh_token_in_db(user.id, jti, refresh_token, exp, token_repo)         
+        logger.info(f"User login successful user_id={str(user.id)} method=github")
         return access_token, user, refresh_token
 
 
@@ -260,6 +286,7 @@ class UserService:
     async def deactivate_user(current_user: User, repo: UserRepository):
         current_user.is_active = False 
         await repo.update(current_user)
+        logger.info(f"User deactivated account user_id={str(current_user.id)}, email={current_user.email}")
         return True
 
 

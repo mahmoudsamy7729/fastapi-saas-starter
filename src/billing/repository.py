@@ -61,6 +61,25 @@ class SubscriptionRepoistory:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
+    async def get_by_provider_subscription_id(
+        self,
+        provider: PaymentProvider,
+        provider_subscription_id: str,
+    ) -> Subscription | None:
+        result = await self.db.execute(
+            select(Subscription)
+            .where(
+                Subscription.provider == provider,
+                Subscription.provider_subscription_id == provider_subscription_id,
+            )
+            .options(
+                selectinload(Subscription.user),
+                selectinload(Subscription.plan),
+            )
+        )
+
+        return result.scalar_one_or_none()
+
 
     async def list_for_user(self, user_id: UUID) -> List[Subscription]:
         result = await self.db.execute(
@@ -95,8 +114,8 @@ class SubscriptionRepoistory:
         return result.scalar_one_or_none()
     
 
-    async def create_subscription(self, user_id: UUID, plan: Plan, provider: str, 
-            provider_subscription_id: str, provider_customer_id: str) -> Subscription:
+    async def create_subscription(self, user_id: UUID, plan_id: UUID, provider: str, 
+            provider_subscription_id: str, provider_customer_id: str, status: SubscriptionStatus) -> Subscription:
         old_sub = await self.get_subscription_with_access(user_id)
         if old_sub:
             old_sub.status = SubscriptionStatus.CANCELED
@@ -105,8 +124,8 @@ class SubscriptionRepoistory:
 
         sub = Subscription(
             user_id=user_id,
-            plan_id=plan.id,
-            status=SubscriptionStatus.PAST_DUE,
+            plan_id=plan_id,
+            status=status,
             # provider fields
             provider=provider,
             provider_subscription_id=provider_subscription_id,
