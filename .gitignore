@@ -15,6 +15,8 @@ venv/
 .envs/
 .venv/
 
+celerybeat-schedule
+
 
 # Log files
 logs/
