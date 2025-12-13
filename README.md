@@ -3,6 +3,70 @@
 
 A FastAPI backend that provides login/registration, OAuth, OTP, email verification, and Stripe-based subscriptions. It runs async with PostgreSQL, Redis, and Celery so you can plug it into a SaaS dashboard or API-first product.
 
+## Project Structure
+
+```text
+FastAPI SaaS kit/
+|-- .github/
+|   `-- workflows/ci.yml
+|-- alembic/
+|   |-- env.py
+|   |-- script.py.mako
+|   `-- versions/
+|-- logs/
+|-- requirements/
+|   |-- devlopment.txt
+|   `-- requirements.txt
+|-- src/
+|   |-- auth/
+|   |   |-- dependencies.py
+|   |   |-- emails.py
+|   |   |-- models.py
+|   |   |-- repository.py
+|   |   |-- router.py
+|   |   |-- schemas.py
+|   |   |-- service.py
+|   |   `-- utils.py
+|   |-- billing/
+|   |   |-- dependencies.py
+|   |   |-- emails.py
+|   |   |-- models.py
+|   |   |-- repository.py
+|   |   |-- router.py
+|   |   |-- schemas.py
+|   |   |-- service.py
+|   |   `-- stripe_gateway.py
+|   |-- auth_bearer.py
+|   |-- celery_app.py
+|   |-- config.py
+|   |-- database.py
+|   |-- dependencies.py
+|   |-- logging.py
+|   |-- main.py
+|   |-- models.py
+|   |-- repository.py
+|   |-- tasks.py
+|   `-- utils.py
+|-- templates/
+|   `-- email/
+|-- tests/
+|   |-- auth/
+|   |   |-- api_test.py
+|   |   |-- conftest.py
+|   |   `-- unit_test.py
+|   `-- billing/
+|       |-- api_test.py
+|       |-- conftest.py
+|       `-- unit_test.py
+|-- docker-compose.yml
+|-- Dockerfile
+|-- alembic.ini
+|-- docs.md
+|-- features.md
+|-- pytest.ini
+`-- README.md
+```
+
 ## Technical Overview
 - FastAPI app with per-domain routers (`src/auth/router.py`, `src/billing/router.py`), CORS, structured logging, and slowapi rate limiting.
 - Service/repository layers over async SQLAlchemy 2.0 + asyncpg; sync engine for Celery tasks.

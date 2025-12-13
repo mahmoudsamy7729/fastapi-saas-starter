@@ -1,5 +1,4 @@
 import stripe
-import logging
 from uuid import UUID
 from fastapi import HTTPException, status
 from fastapi.concurrency import run_in_threadpool
