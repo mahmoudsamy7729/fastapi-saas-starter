@@ -31,7 +31,6 @@ log/
 # __pycache__
 **/__pycache__/
 
-alembic.ini
 
 
 celerybeat-schedule
