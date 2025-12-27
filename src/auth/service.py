@@ -63,10 +63,9 @@ class UserService:
         
     
     @staticmethod
-    async def refresh_token(request: Request, token_repo: RefreshTokenRepository):
-        refresh_token = request.cookies.get("refresh_token")
+    async def refresh_token(refresh_token: str, token_repo: RefreshTokenRepository):
         if not refresh_token:
-            logger.warning("Refresh token missing in cookies")
+            logger.warning("Refresh token missing in request")
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token is missing.")
         payload = verify_token(refresh_token, settings.refresh_secret_key)
 

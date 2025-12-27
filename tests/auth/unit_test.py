@@ -1,7 +1,7 @@
 import pytest
 from uuid import uuid4
 from datetime import datetime, timedelta, timezone, UTC
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
 from starlette.requests import Request as StarletteRequest
 from starlette.datastructures import QueryParams
 from unittest.mock import AsyncMock, patch
@@ -9,7 +9,7 @@ from src.hashing import verify_password, hash_password
 from src.jwt import generate_token, verify_token
 from src.auth.service import UserService
 from src.auth.models import User, Provider, LoginCode
-from src.auth.schemas import UserCreateRequest, UserLoginRequest, NewPasswordRequest, ChangePasswordRequest, LoginCodeRequest, LoginWithCodeRequest
+from src.auth.schemas import UserCreateRequest, UserLoginRequest, NewPasswordRequest, ChangePasswordRequest, ForgetPasswordRequest, LoginCodeRequest, LoginWithCodeRequest
 
 
 @pytest.mark.asyncio
@@ -141,14 +141,17 @@ async def test_login_user_success():
             patch("src.auth.service.store_refresh_token_in_db", new_callable=AsyncMock) as mock_store:
         
         mock_verify.return_value = True
-        mock_generate.return_value = ("access", "jti123", 123456)
+        mock_generate.side_effect = [
+            ("access", "jti_access", 123456),
+            ("refresh", "jti_refresh", 123999),
+        ]
         mock_store.return_value = None
 
         user_data = UserLoginRequest(email="sam@example.com", password="123456")
         access, user_out, refresh = await UserService.login_user(user_data, repo, token_repo)
 
         assert access == "access"
-        assert refresh == "access"   # because generate_token returns same tuple
+        assert refresh == "refresh"
         assert user_out.email == "sam@example.com"
 
 
@@ -195,6 +198,7 @@ async def test_login_user_inactive():
         email="sam@example.com",
         username="sam",
         password="hashed",
+        is_active=False,
     )
 
     repo = AsyncMock()
@@ -213,10 +217,7 @@ async def test_login_user_inactive():
 
 @pytest.mark.asyncio
 async def test_refresh_token_success():
-    mock_request = AsyncMock(spec=Request)
-    mock_request.cookies.get.return_value = "valid_refresh_token"
-
-
+    refresh_token = "valid_refresh_token"
     token_repo = AsyncMock()
     old_token = AsyncMock()
     token_repo.get_by_jti.return_value = old_token
@@ -232,10 +233,10 @@ async def test_refresh_token_success():
     with patch("src.auth.service.verify_token", return_value=payload), \
          patch("src.auth.service.validate_refresh_token", return_value=None), \
          patch("src.auth.service.generate_token", side_effect=[("access_token", None, None), ("refresh_token", "jti123", 999999)]), \
-         patch("src.auth.service.hash_password", return_value="hashed_refresh"), \
-         patch("src.auth.service.revoke_refresh_token", return_value=None):
+         patch("src.auth.service.hash_password", new_callable=AsyncMock, return_value="hashed_refresh"), \
+         patch("src.auth.service.revoke_refresh_token", new_callable=AsyncMock, return_value=None):
         
-        access, refresh = await UserService.refresh_token(mock_request, token_repo)
+        access, refresh = await UserService.refresh_token(refresh_token, token_repo)
 
         assert access == "access_token"
         assert refresh == "refresh_token"
@@ -244,9 +245,7 @@ async def test_refresh_token_success():
 
 @pytest.mark.asyncio 
 async def test_refresh_token_no_jti():
-    mock_request = AsyncMock(spec=Request)
-    mock_request.cookies.get.return_value = "invalid_refresh_token"
-
+    refresh_token = "invalid_refresh_token"
     payload = {
         "sub": "12345678-1234-5678-1234-567812345678",
         "email": "test@example.com",
@@ -257,14 +256,12 @@ async def test_refresh_token_no_jti():
     with patch("src.auth.service.verify_token", return_value=payload):
         token_repo = AsyncMock()
         with pytest.raises(HTTPException) as exc:
-            await UserService.refresh_token(mock_request, token_repo)
+            await UserService.refresh_token(refresh_token, token_repo)
 
 
 @pytest.mark.asyncio
 async def test_refresh_token_not_found():
-    mock_request = AsyncMock(spec=Request)
-    mock_request.cookies.get.return_value = "valid_refresh_token"
-
+    refresh_token = "valid_refresh_token"
     token_repo = AsyncMock()
     token_repo.get_by_jti.return_value = None
 
@@ -280,14 +277,12 @@ async def test_refresh_token_not_found():
          patch("src.auth.service.validate_refresh_token", side_effect=HTTPException(status_code=401)):
         
         with pytest.raises(HTTPException) as exc:
-            await UserService.refresh_token(mock_request, token_repo)
+            await UserService.refresh_token(refresh_token, token_repo)
 
 
 @pytest.mark.asyncio
 async def test_refresh_token_revoked():
-    mock_request = AsyncMock(spec=Request)
-    mock_request.cookies.get.return_value = "valid_refresh_token"
-
+    refresh_token = "valid_refresh_token"
     token_repo = AsyncMock()
     old_token = AsyncMock()
     old_token.revoked = True
@@ -305,30 +300,25 @@ async def test_refresh_token_revoked():
          patch("src.auth.service.validate_refresh_token", side_effect=HTTPException(status_code=401)):
         
         with pytest.raises(HTTPException) as exc:
-            await UserService.refresh_token(mock_request, token_repo)
+            await UserService.refresh_token(refresh_token, token_repo)
 
 
 @pytest.mark.asyncio
-async def test_refresh_token_missing_cookie():
-    mock_request = AsyncMock(spec=Request)
-    mock_request.cookies.get.return_value = None
-
+async def test_refresh_token_missing_value():
     token_repo = AsyncMock()
 
     with pytest.raises(HTTPException) as exc:
-        await UserService.refresh_token(mock_request, token_repo)
+        await UserService.refresh_token("", token_repo)
 
 
 @pytest.mark.asyncio
 async def test_refresh_token_invalid_token():
-    mock_request = AsyncMock(spec=Request)
-    mock_request.cookies.get.return_value = "invalid_refresh_token"
-
+    refresh_token = "invalid_refresh_token"
     token_repo = AsyncMock()
 
     with patch("src.auth.service.verify_token", side_effect=HTTPException(status_code=401)):
         with pytest.raises(HTTPException) as exc:
-            await UserService.refresh_token(mock_request, token_repo)
+            await UserService.refresh_token(refresh_token, token_repo)
 
 
 @pytest.mark.asyncio
@@ -389,6 +379,33 @@ async def test_validate_user_user_not_found():
         
         with pytest.raises(HTTPException) as exc:
             await UserService.validate_user(token, repo)
+
+
+@pytest.mark.asyncio
+async def test_forget_password_user_found():
+    repo = AsyncMock()
+    user = User(
+        id=uuid4(),
+        email="sam@example.com",
+        username="sam",
+        is_active=True,
+        is_verified=True
+    )
+    repo.get_by_email.return_value = user
+
+    data = ForgetPasswordRequest(email="sam@example.com")
+    result = await UserService.forget_password(data, repo)
+    assert result == user
+
+
+@pytest.mark.asyncio
+async def test_forget_password_user_missing():
+    repo = AsyncMock()
+    repo.get_by_email.return_value = None
+
+    data = ForgetPasswordRequest(email="missing@example.com")
+    result = await UserService.forget_password(data, repo)
+    assert result is None
 
 
 @pytest.mark.asyncio
@@ -474,6 +491,24 @@ async def test_change_password_invalid_old_password():
         data = ChangePasswordRequest(new_password="new_hashed_password", old_password="wrong_old_password")
         with pytest.raises(HTTPException) as exc:
             await UserService.change_password(data, repo, user)
+
+
+@pytest.mark.asyncio
+async def test_deactivate_user_success():
+    repo = AsyncMock()
+    repo.update = AsyncMock()
+    user = User(
+        id=uuid4(),
+        email="sam@example.com",
+        username="sam",
+        is_active=True,
+        is_verified=True
+    )
+
+    result = await UserService.deactivate_user(user, repo)
+    assert result is True
+    assert user.is_active is False
+    repo.update.assert_awaited_once_with(user)
 
 
 @pytest.mark.asyncio
@@ -663,7 +698,7 @@ async def test_login_with_google_success():
         ("access123", "jti_access", 111),
         ("refresh123", "jti_refresh", 222),
 ]), \
-         patch("src.utils.store_refresh_token_in_db", return_value=None):
+         patch("src.auth.service.store_refresh_token_in_db", new_callable=AsyncMock, return_value=None):
         
         access, user, refresh = await UserService.login_with_google(
             request, repo, token_repo
@@ -704,7 +739,7 @@ async def test_login_with_google_missing_cookie_state():
     }
     request = StarletteRequest(scope)
     request._query_params = QueryParams({"code": "valid", "state": "xyz"})
-    request._cookies = {}  # ❌ cookie missing
+    request._cookies = {}  # cookie missing
 
     repo = AsyncMock()
     token_repo = AsyncMock()
@@ -788,7 +823,7 @@ async def test_login_with_google_user_exists():
              ("accessXYZ", "j1", 111),
              ("refreshXYZ", "j2", 222)
          ]), \
-         patch("src.utils.store_refresh_token_in_db", return_value=None):
+         patch("src.auth.service.store_refresh_token_in_db", new_callable=AsyncMock, return_value=None):
 
         access, out_user, refresh = await UserService.login_with_google(
             request, repo, token_repo
@@ -832,7 +867,7 @@ async def test_login_with_github_success():
              ("access123", "jti_access", 111),
              ("refresh123", "jti_refresh", 222),
          ]), \
-         patch("src.utils.store_refresh_token_in_db", return_value=None):
+         patch("src.auth.service.store_refresh_token_in_db", new_callable=AsyncMock, return_value=None):
 
         access, user, refresh = await UserService.login_with_github(request, repo, token_repo)
 
@@ -929,7 +964,7 @@ async def test_login_with_github_email_none():
              ("access123", "jti_access", 111),
              ("refresh123", "jti_refresh", 222),
          ]), \
-         patch("src.utils.store_refresh_token_in_db", return_value=None):
+         patch("src.auth.service.store_refresh_token_in_db", new_callable=AsyncMock, return_value=None):
 
         access, user, refresh = await UserService.login_with_github(request, repo, token_repo)
 
@@ -967,7 +1002,7 @@ async def test_login_with_github_existing_user():
              ("access123", "jti_access", 111),
              ("refresh123", "jti_refresh", 222),
          ]), \
-         patch("src.utils.store_refresh_token_in_db", return_value=None):
+         patch("src.auth.service.store_refresh_token_in_db", new_callable=AsyncMock, return_value=None):
 
         access, user, refresh = await UserService.login_with_github(request, repo, token_repo)
 

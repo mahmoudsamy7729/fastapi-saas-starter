@@ -19,33 +19,16 @@ async def register_user(user_data: schemas.UserCreateRequest, repo: repo_depende
 
 
 @router.post("/login", response_model=schemas.UserLoginResponse, status_code=status.HTTP_200_OK)
-async def login_user(user_data: schemas.UserLoginRequest, repo: repo_dependency, token_repo: token_depedency,
-                    response: Response):
+async def login_user(user_data: schemas.UserLoginRequest, repo: repo_dependency, token_repo: token_depedency):
     access_token, user, refresh_token = await UserService.login_user(user_data, repo, token_repo)
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=False,       # True in production (HTTPS)
-        samesite="lax",     # likely "none" in prod if cross-site
-        max_age=7*24*60*60
-    )
+    return {"token": access_token, "refresh_token": refresh_token, "user": user}
 
-    return {"token": access_token, "user": user}
 
 
 @router.post("/refresh-token", response_model=schemas.RefreshTokenResponse, status_code=status.HTTP_200_OK)
-async def refresh_token(request: Request, response: Response, token_repo: token_depedency):
-    access_token, refresh_token = await UserService.refresh_token(request, token_repo)
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=False,       # True in production (HTTPS)
-        samesite="lax",     # likely "none" in prod if cross-site
-        max_age=7*24*60*60
-    )
-    return {"token": access_token}
+async def refresh_token(token:str, request: Request, token_repo: token_depedency):
+    access_token, refresh_token = await UserService.refresh_token(token, token_repo)
+    return {"token": access_token, "refresh_token": refresh_token}
 
 
 @router.get("/verify", response_model=schemas.MessageResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -99,18 +82,10 @@ async def request_login_code(data: schemas.LoginCodeRequest, user_repo:repo_depe
     
 
 @router.post("/login/code", response_model=schemas.UserLoginResponse, status_code=status.HTTP_200_OK)
-async def login_with_code(data: schemas.LoginWithCodeRequest, response: Response,
+async def login_with_code(data: schemas.LoginWithCodeRequest,
                         user_repo:repo_dependency, code_repo: code_dependency, token_repo: token_depedency):
     access_token, user, refresh_token = await UserService.login_with_code(data, user_repo, code_repo, token_repo)
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=False,       # True in production (HTTPS)
-        samesite="lax",     # likely "none" in prod if cross-site
-        max_age=7*24*60*60
-    )
-    return {"token": access_token, "user": user}
+    return {"token": access_token, "refresh_token": refresh_token, "user": user}
 
 
 @router.get("/google/login")
@@ -131,15 +106,8 @@ async def login_with_google():
 async def google_callback(response: Response, request: Request, repo:repo_dependency, token_repo: token_depedency):
     access_token, user, refresh_token = await UserService.login_with_google(request, repo, token_repo)
     response.delete_cookie("oauth_state_google")
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=False,       # True in production (HTTPS)
-        samesite="lax",     # likely "none" in prod if cross-site
-        max_age=7*24*60*60
-    )
-    return {"token": access_token, "user": user}
+    return {"token": access_token, "refresh_token": refresh_token, "user": user}
+
 
 
 @router.get("/github/login")
@@ -160,16 +128,7 @@ async def login_with_github():
 async def github_callback(response: Response, request: Request, repo:repo_dependency, token_repo: token_depedency):
     access_token, user, refresh_token = await UserService.login_with_github(request, repo, token_repo)
     response.delete_cookie("oauth_state_github")
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=False,       # True in production (HTTPS)
-        samesite="lax",     # likely "none" in prod if cross-site
-        max_age=7*24*60*60
-    )
-    return {"token": access_token, "user": user}
-
+    return {"token": access_token, "refresh_token": refresh_token, "user": user}
 
 @router.post("/deactivate", response_model=schemas.MessageResponse, status_code=status.HTTP_202_ACCEPTED)
 async def user_deactivate(current_user: user_dependency, repo: repo_dependency):
