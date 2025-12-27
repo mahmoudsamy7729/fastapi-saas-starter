@@ -24,14 +24,15 @@ class UserLoginRequest(BaseModel):
 
 class UserLoginResponse(BaseModel):
     token: str
+    refresh_token: str
     type: str = "Bearer"
     user: UserRead
 
 
 class RefreshTokenResponse(BaseModel):
     token: str
+    refresh_token: str
     type: str = "Bearer"
-
 
 class MessageResponse(BaseModel):
     message: str
