@@ -12,22 +12,42 @@ from src.database import get_sync_session
 
 email_service = Emails()
 
-@celery_app.task(name="send_subscription_email_task")
+@celery_app.task(
+            name="send_subscription_email_task",
+            autoretry_for=(Exception,),
+            retry_backoff=True,
+            retry_kwargs={"max_retries": 5},
+        )
 def send_subscription_email_task(subscription: dict):
     async_to_sync(email_service.send_subscription_email)(subscription)
 
 
-@celery_app.task(name="send_update_subscription_email_task")
+@celery_app.task(
+        name="send_update_subscription_email_task",
+        autoretry_for=(Exception,),
+        retry_backoff=True,
+        retry_kwargs={"max_retries": 5},
+        )
 def send_update_subscription_email_task(subscription: dict):
     async_to_sync(email_service.send_subscription_update_email)(subscription)
 
 
-@celery_app.task(name="send_cancel_subscription_email_task")
+@celery_app.task(
+        name="send_cancel_subscription_email_task",
+        autoretry_for=(Exception,),
+        retry_backoff=True,
+        retry_kwargs={"max_retries": 5},
+        )
 def send_cancel_subscription_email_task(subscription: dict):
     async_to_sync(email_service.send_cancel_subscription_email)(subscription)
 
 
-@celery_app.task(name="send_payment_failed_email_task")
+@celery_app.task(
+        name="send_payment_failed_email_task",
+        autoretry_for=(Exception,),
+        retry_backoff=True,
+        retry_kwargs={"max_retries": 5},
+        )
 def send_payment_failed_email_task(subscription: dict):
     async_to_sync(email_service.send_payment_failed_email)(subscription)
 
