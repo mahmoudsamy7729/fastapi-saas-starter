@@ -12,7 +12,9 @@ from src.rate_limiter import limiter
 from src.logging import setup_logging
 from src.auth.router import router as auth_router
 from src.billing.router import router as billing_router
+from src.admin.router import router as admin_router
 from src.exceptions import validation_exception_handler
+from src.auth_bearer import admin_user_dependency
 
 
 setup_logging()
@@ -67,4 +69,4 @@ app.add_exception_handler(RequestValidationError, validation_exception_handler) 
 
 app.include_router(auth_router, tags=["auth"])
 app.include_router(billing_router)
-
+app.include_router(admin_router, tags=["admin"])
