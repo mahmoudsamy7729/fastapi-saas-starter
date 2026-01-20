@@ -32,6 +32,7 @@ class User(Base):
                 default=lambda: datetime.now(timezone.utc),onupdate=lambda: datetime.now(timezone.utc))
     
     subscriptions = relationship("Subscription", back_populates="user")
+    transactions = relationship("Payment", back_populates="user")
 
 
 class LoginCode(Base):
