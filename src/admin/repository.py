@@ -1,5 +1,5 @@
 from uuid import UUID
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -24,7 +24,16 @@ class AdminUserRepository:
         )
         
         users = result.scalars().all()
-        return users
+        count_result = await self.db.execute(
+            select(func.count()).select_from(User)
+        )
+        total_users = count_result.scalar_one()
+        return {
+            "data": users,
+            "total": total_users,
+            "limit": limit,
+            "offset": offset,
+        }
 
 
     async def get_user_by_id(self, user_id: UUID):
@@ -33,7 +42,6 @@ class AdminUserRepository:
         )
 
         return result.scalar_one_or_none()
-
 
 
 
@@ -51,9 +59,17 @@ class AdminSubscriptionRepository:
         result = await self.db.execute(
             select(Subscription).limit(limit).offset(offset)
         )
-
         subscriptions = result.scalars().all()
-        return subscriptions
+        count_result = await self.db.execute(
+            select(func.count()).select_from(Subscription)
+        )
+        total_subscriptions = count_result.scalar_one()
+        return {
+            "data": subscriptions,
+            "total": total_subscriptions,
+            "limit": limit,
+            "offset": offset,
+        }
 
 
     async def get_subscription_by_id(self, sub_id: UUID):
@@ -81,7 +97,17 @@ class AdminPaymentRepository:
         )
 
         payments = result.scalars().all()
-        return payments
+
+        count_result = await self.db.execute(
+            select(func.count()).select_from(Payment)
+        )
+        total_payments = count_result.scalar_one()
+        return {
+            "data": payments,
+            "total": total_payments,
+            "limit": limit,
+            "offset": offset,
+        }
 
 
     async def get_payment_by_id(self, payment_id: UUID):
