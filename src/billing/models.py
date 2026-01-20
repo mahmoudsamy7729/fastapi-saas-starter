@@ -102,6 +102,9 @@ class Payment(Base):
                                     default=lambda: datetime.now(timezone.utc))
     
 
+
+    user = relationship("User", back_populates="transactions")
+
     __table_args__ = (
         UniqueConstraint("provider", "provider_invoice_id",
                          name="uq_provider_invoice_id"),

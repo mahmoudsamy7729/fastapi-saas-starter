@@ -18,9 +18,9 @@ class AnalyticsService:
         payments = await self.payments_repo.list_payments()
 
         return {
-            "users": users['total'],
-            "subscriptions": subscriptions['total'],
-            "payments": payments['total']
+            "users": users['total'] if users else 0,
+            "subscriptions": subscriptions['total'] if subscriptions else 0,
+            "payments": payments['total'] if payments else 0
         }
     
     
@@ -49,9 +49,21 @@ class UsersService:
         self.users_repo = users_repo
 
     
-    async def get_users(self):
-        users = await self.users_repo.list_users()
-        return users['data']
+    async def get_users(self, *,
+        limit: int = 50,
+        offset: int = 0,
+        is_active: bool | None = None,
+        is_verified: bool | None = None,
+        is_admin: bool | None = None):
+        users = await self.users_repo.list_users(
+            limit=limit,
+            offset=offset,
+            is_active=is_active,
+            is_verified=is_verified,
+            is_admin=is_admin,
+        )
+        
+        return users
     
 
     async def get_user_by_id(self, user_id : UUID):
@@ -59,3 +71,17 @@ class UsersService:
         if not user :
             pass
         return user
+    
+
+    async def get_user_transactions(self, user_id: UUID):
+        transactions = await self.users_repo.get_user_transactions(user_id)
+        if not transactions :
+            pass
+        return transactions
+    
+
+    async def get_user_subscriptions(self, user_id: UUID):
+        subscriptions = await self.users_repo.get_user_subscriptions(user_id)
+        if not subscriptions :
+            pass
+        return subscriptions
