@@ -69,9 +69,10 @@ async def get_admin_user(current_user: User = Depends(get_active_user)) -> User:
         )
     return current_user
     
-non_active_user_dependency = Annotated[User, Depends(get_not_active_user)]
-user_dependency = Annotated[User, Depends(get_active_user)]
+non_active_user_dep = Annotated[User, Depends(get_not_active_user)]
+active_user_dep = Annotated[User, Depends(get_active_user)]
 admin_user_dependency = Annotated[User, Depends(get_admin_user)]
+user_dependency = Annotated[User, Depends(get_user)]
 
 
 

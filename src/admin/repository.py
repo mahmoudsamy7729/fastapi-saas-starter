@@ -37,7 +37,7 @@ class AdminUserRepository:
         return await paginate(self.db, query, limit=limit, offset=offset)
 
 
-    async def get_user_by_id(self, user_id: UUID):
+    async def get_user_by_id(self, user_id: UUID,):
     
         result = await self.db.execute(
             select(User,)
@@ -70,26 +70,19 @@ class AdminUserRepository:
                     *,
         limit: int = 50,
         offset: int = 0):
-        result = await self.db.execute(
-            select(Subscription)
-            .where(Subscription.user_id == user_id).limit(limit).offset(offset)
-        )
 
-        subscriptions = result.scalars().all()
-        return subscriptions
+        query = select(Subscription).where(Subscription.user_id == user_id).order_by(Subscription.started_at.desc())
+        
+
+        return await paginate(self.db, query, limit=limit, offset=offset)
     
 
     async def get_user_transactions(self,user_id: UUID,
                     *,
         limit: int = 50,
         offset: int = 0):
-        result = await self.db.execute(
-            select(Payment)
-            .where(Payment.user_id == user_id).limit(limit).offset(offset)
-        )
-
-        payments = result.scalars().all()
-        return payments
+        query = select(Payment).where(Payment.user_id == user_id).order_by(Payment.created_at.desc())
+        return await paginate(self.db, query, limit=limit, offset=offset)
 
 
 
@@ -108,26 +101,15 @@ class AdminSubscriptionRepository:
         limit = 50,
         offset = 0):
 
-        result = await self.db.execute(
-            select(Subscription).limit(limit).offset(offset)
-        )
-        subscriptions = result.scalars().all()
-        count_result = await self.db.execute(
-            select(func.count()).select_from(Subscription)
-        )
-        total_subscriptions = count_result.scalar_one()
-        return {
-            "data": subscriptions,
-            "total": total_subscriptions,
-            "limit": limit,
-            "offset": offset,
-        }
+        query = select(Subscription).order_by(Subscription.started_at.desc())
+
+        return await paginate(self.db, query, limit=limit, offset=offset)
 
 
     async def get_subscription_by_id(self, sub_id: UUID):
         result = await self.db.execute(
-            select(Subscription).where(Subscription.id == sub_id)
-        )
+            select(Subscription).where(Subscription.id == sub_id).options(selectinload(Subscription.payments)
+        ))
 
         return result.scalar_one_or_none()
 
@@ -143,27 +125,13 @@ class AdminPaymentRepository:
         limit = 50,
         offset = 0):
 
-        result = await self.db.execute(
-            select(Payment).limit(limit).offset(offset)
-        )
-
-        payments = result.scalars().all()
-
-        count_result = await self.db.execute(
-            select(func.count()).select_from(Payment)
-        )
-        total_payments = count_result.scalar_one()
-        return {
-            "data": payments,
-            "total": total_payments,
-            "limit": limit,
-            "offset": offset,
-        }
+        query = select(Payment).order_by(Payment.created_at.desc())
+        return await paginate(self.db, query, limit=limit, offset=offset)
 
 
     async def get_payment_by_id(self, payment_id: UUID):
         result = await self.db.execute(
-            select(Payment).where(Payment.id == payment_id)
+            select(Payment).where(Payment.id == payment_id).options(selectinload(Payment.subscription))
         )
 
         return result.scalar_one_or_none()

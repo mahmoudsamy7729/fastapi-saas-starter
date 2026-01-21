@@ -5,7 +5,7 @@ from src.billing.service import PlanService, SubscriptionService, PaymentService
 from src.billing import schemas
 from src.billing.dependencies import plan_dependency, subscription_dependency, payment_dependency
 from src.auth.dependencies import repo_dependency
-from src.auth_bearer import  user_dependency, admin_user_dependency
+from src.auth_bearer import  active_user_dep, admin_user_dependency
 
 
 
@@ -43,32 +43,32 @@ async def update_plan(plan_id: UUID, data: schemas.PlanUpdate, plan_dep: plan_de
 
 
 @router.get("/payments/me", response_model=list[schemas.PaymentResponse], status_code=status.HTTP_200_OK)
-async def get_my_payments(user: user_dependency, payment_deb: payment_dependency):
+async def get_my_payments(user: active_user_dep, payment_deb: payment_dependency):
     payments = await PaymentService.get_my_payments(user, payment_deb)
     return payments
 
 
 @router.get("/subscriptions/me", response_model=schemas.SubscriptionOut, status_code=status.HTTP_200_OK)
-async def get_my_subscription(user: user_dependency, sub_dep: subscription_dependency):
+async def get_my_subscription(user: active_user_dep, sub_dep: subscription_dependency):
     subscription = await SubscriptionService.get_user_subscription(user.id, sub_dep)
     return subscription
 
 
 @router.post("/subscriptions/subscribe", response_model=schemas.CheckoutUrlResponse, status_code=status.HTTP_201_CREATED)
-async def subscribe_to_plan(user: user_dependency, data: schemas.SubscribeRequest,
+async def subscribe_to_plan(user: active_user_dep, data: schemas.SubscribeRequest,
                 sub_dep: subscription_dependency, plan_dep: plan_dependency, user_repo: repo_dependency):
     checkout_url = await SubscriptionService.subscribe_user_to_plan(user, data.plan_code, sub_dep, plan_dep, user_repo)
     return {"checkout_url":checkout_url}
 
 
 @router.post("/subscriptions/cancel", response_model=schemas.SubscriptionOut, status_code=status.HTTP_200_OK)
-async def cancel_subscription_at_end_of_period(user: user_dependency, sub_deb: subscription_dependency):
+async def cancel_subscription_at_end_of_period(user: active_user_dep, sub_deb: subscription_dependency):
     subscription = await SubscriptionService.cancel_subscription_at_end_of_period(user.id, sub_deb)
     return subscription
 
 
 @router.post("/subscriptions/upgrade", response_model=schemas.CheckoutUrlResponse, status_code=status.HTTP_200_OK)
-async def upgrade_subscription(data: schemas.SubscribeRequest, user: user_dependency, sub_repo: subscription_dependency,
+async def upgrade_subscription(data: schemas.SubscribeRequest, user: active_user_dep, sub_repo: subscription_dependency,
     plan_repo: plan_dependency, user_repo: repo_dependency):
     sub = await SubscriptionService.upgrade_subscription(user, data.plan_code, sub_repo, plan_repo, user_repo)
     return sub

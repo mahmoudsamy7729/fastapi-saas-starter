@@ -29,9 +29,14 @@ class SubscriptionsServices:
         self.subscriptions_repo = subscriptions_repo
 
 
-    async def get_subscriptions(self):
-        subscriptions = await self.subscriptions_repo.list_subscriptions()
-        return subscriptions['data']
+    async def get_subscriptions(self, limit: int = 50, offset: int = 0):
+        subscriptions = await self.subscriptions_repo.list_subscriptions(limit=limit, offset=offset)
+        return subscriptions
+    
+
+    async def get_subscription_by_id(self, sub_id: UUID):
+        subscription = await self.subscriptions_repo.get_subscription_by_id(sub_id)
+        return subscription
     
 
 class PaymentsServices:
@@ -39,9 +44,14 @@ class PaymentsServices:
         self.payments_repo = payments_repo
 
 
-    async def get_payments(self):
-        payments = await self.payments_repo.list_payments()
-        return payments['data']
+    async def get_payments(self, limit: int = 50, offset: int = 0):
+        payments = await self.payments_repo.list_payments(limit=limit, offset=offset)
+        return payments
+    
+
+    async def get_payment_by_id(self, payment_id: UUID):
+        payment = await self.payments_repo.get_payment_by_id(payment_id)
+        return payment
 
 
 class UsersService:
@@ -73,15 +83,13 @@ class UsersService:
         return user
     
 
-    async def get_user_transactions(self, user_id: UUID):
-        transactions = await self.users_repo.get_user_transactions(user_id)
-        if not transactions :
-            pass
+    async def get_user_transactions(self, user_id: UUID,limit: int = 50,
+        offset: int = 0):
+        transactions = await self.users_repo.get_user_transactions(user_id, limit=limit, offset=offset)
         return transactions
     
 
-    async def get_user_subscriptions(self, user_id: UUID):
-        subscriptions = await self.users_repo.get_user_subscriptions(user_id)
-        if not subscriptions :
-            pass
+    async def get_user_subscriptions(self, user_id: UUID, limit: int = 50,
+        offset: int = 0):
+        subscriptions = await self.users_repo.get_user_subscriptions(user_id, limit=limit, offset=offset)
         return subscriptions

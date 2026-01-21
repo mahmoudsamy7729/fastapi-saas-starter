@@ -84,6 +84,7 @@ class Subscription(Base):
 
     user = relationship("User", back_populates="subscriptions")
     plan = relationship("Plan", back_populates="subscriptions")
+    payments = relationship("Payment", back_populates="subscription")
 
 
 
@@ -104,6 +105,7 @@ class Payment(Base):
 
 
     user = relationship("User", back_populates="transactions")
+    subscription = relationship("Subscription", back_populates="payments")
 
     __table_args__ = (
         UniqueConstraint("provider", "provider_invoice_id",

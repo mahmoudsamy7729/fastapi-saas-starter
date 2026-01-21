@@ -43,30 +43,47 @@ async def get_user_details(user_dependency: dependencies.UsersServiceDep, user_i
 
 
 @router.get("/users/{user_id}/transactions")
-async def get_user_transactions(user_dependency: dependencies.UsersServiceDep, user_id: UUID):
-    transactions = await user_dependency.get_user_transactions(user_id)
+async def get_user_transactions(user_dependency: dependencies.UsersServiceDep, user_id: UUID,
+    limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0),):
+    transactions = await user_dependency.get_user_transactions(user_id, limit=limit, offset=offset)
     return transactions
 
 
 @router.get("/users/{user_id}/subscriptions")
-async def get_user_subscriptions(user_dependency: dependencies.UsersServiceDep, user_id: UUID):
-    subscriptions = await user_dependency.get_user_subscriptions(user_id)
+async def get_user_subscriptions(user_dependency: dependencies.UsersServiceDep, user_id: UUID,
+    limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0),):
+    subscriptions = await user_dependency.get_user_subscriptions(user_id, limit=limit, offset=offset)
     return subscriptions
     
 
 
 @router.get("/billing/transactions")
-async def get_transactions(payment_dependency: dependencies.PaymentsServceDep):
-    payments = await payment_dependency.get_payments()
-    if payments:
-        return payments
+async def get_transactions(payment_dependency: dependencies.PaymentsServceDep,
+    limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0),):
+    payments = await payment_dependency.get_payments(limit=limit, offset=offset)
+    return payments
     
+
+@router.get("/billing/transactions/{payment_id}")
+async def get_transaction_by_id(payment_dependency: dependencies.PaymentsServceDep,
+    payment_id: UUID):
+    payment = await payment_dependency.get_payment_by_id(payment_id)
+    return payment
 
 
 @router.get("/billing/subscriptions")
-async def get_subscriptions(subscription_dependency: dependencies.SubScriptionsServciceDep):
-    subscriptions = await subscription_dependency.get_subscriptions()
-    if subscriptions:
-        return subscriptions 
+async def get_subscriptions(subscription_dependency: dependencies.SubScriptionsServciceDep,
+    limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0),):
+    subscriptions = await subscription_dependency.get_subscriptions(limit=limit, offset=offset)
+    return subscriptions 
 
 
+@router.get("/billing/subscriptions/{sub_id}")
+async def get_subscription_by_id(subscription_dependency: dependencies.SubScriptionsServciceDep,
+    sub_id: UUID):
+    subscription = await subscription_dependency.get_subscription_by_id(sub_id)
+    return subscription

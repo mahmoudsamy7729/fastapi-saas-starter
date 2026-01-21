@@ -275,7 +275,7 @@ async def test_google_callback_success(client: AsyncClient):
         username="sam",
         provider=Provider.GOOGLE,
     )
-    with patch("src.auth.router.UserService.login_with_google") as mock_login:
+    with patch("src.auth.service.UserService.login_with_google") as mock_login:
         mock_login.return_value = ("access", fake_user, "refresh")
         response = await client.get("/auth/social/callback/google")
         assert response.status_code == status.HTTP_200_OK
@@ -301,7 +301,7 @@ async def test_github_callback_success(client: AsyncClient):
         username="sam",
         provider=Provider.GITHUB,
     )
-    with patch("src.auth.router.UserService.login_with_github") as mock_login:
+    with patch("src.auth.service.UserService.login_with_github") as mock_login:
         mock_login.return_value = ("access", fake_user, "refresh")
         response = await client.get("/auth/social/callback/github")
         assert response.status_code == status.HTTP_200_OK
