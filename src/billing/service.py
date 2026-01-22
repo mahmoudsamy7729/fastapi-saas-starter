@@ -26,25 +26,27 @@ stripe.api_key = settings.stripe_secret_key
 
 
 class PlanService:
-    @staticmethod
-    async def retrive_plans(repo: PlanRepository):
-        plans = await repo.list_plans()
+    def __init__(self, plan_repo: PlanRepository):
+        self.plan_repo = plan_repo
+
+
+    async def retrive_plans(self):
+        plans = await self.plan_repo.list_plans()
         logger.info(f"Retrieved plans count={len(plans)}")
         return plans
     
 
-    @staticmethod
-    async def create_plan(data: schemas.PlanCreate, repo: PlanRepository):
-        existing_code = await repo.get_by_code(data.code)
+    async def create_plan(self, data: schemas.PlanCreate):
+        existing_code = await self.plan_repo.get_by_code(data.code)
         if existing_code :
             logger.warning(f"Attempt to create plan with existing code code={data.code}")
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Existing Code")
         
-        result = await repo.create(data.model_dump())
+        result = await self.plan_repo.create(data.model_dump())
         logger.info(f"Plan created locally plan_id={result.id}, code={result.code}")
         stripe_plan = await StripeGateway.save_plan_to_stripe(result)
         if stripe_plan:
-            updated_plan = await repo.update(result, {
+            updated_plan = await self.plan_repo.update(result, {
                 "stripe_product_id": stripe_plan.stripe_product_id,
                 "stripe_price_id": stripe_plan.stripe_price_id
             })
@@ -59,31 +61,28 @@ class PlanService:
         return result
 
 
-    @staticmethod
-    async def get_plan_by_id(plan_id: UUID, repo: PlanRepository):
-        plan = await repo.get_by_id(plan_id)
+    async def get_plan_by_id(self, plan_id: UUID):
+        plan = await self.plan_repo.get_by_id(plan_id)
         if not plan: 
             logger.warning(f"Plan not found plan_id={plan_id}")
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No plan found for this id")
         return plan
     
 
-    @staticmethod
-    async def update_plan(plan_id: UUID, data: schemas.PlanUpdate, repo: PlanRepository):
-        plan = await repo.get_by_id(plan_id)
+    async def update_plan(self, plan_id: UUID, data: schemas.PlanUpdate):
+        plan = await self.plan_repo.get_by_id(plan_id)
         if not plan: 
             logger.warning(f"Attempt to update non-existing plan plan_id={plan_id}")
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No plan found for this id")
         
         update_data = await StripeGateway.update_plan_in_stripe(plan, data)
-        result = await repo.update(plan, update_data)    
+        result = await self.plan_repo.update(plan, update_data)    
         logger.info(f"Plan updated plan_id={result.id}, code={result.code}")
         return result
     
 
-    @staticmethod
-    async def soft_delete_plan(plan_id: UUID, repo: PlanRepository):
-        plan = await repo.get_by_id(plan_id)
+    async def soft_delete_plan(self, plan_id: UUID):
+        plan = await self.plan_repo.get_by_id(plan_id)
         if not plan: 
             logger.warning(f"Attempt to soft delete non-existing plan plan_id={plan_id}")
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No plan found for this id")
@@ -94,7 +93,7 @@ class PlanService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Plan already deleted.")
        
         await StripeGateway.soft_delete_plan_in_stripe(plan)
-        await repo.soft_delete(plan)
+        await self.plan_repo.soft_delete(plan)
         logger.info(
             f"Plan soft deleted plan_id={plan.id}, code={plan.code}, "
             f"stripe_product_id={plan.stripe_product_id}, stripe_price_id={plan.stripe_price_id}"
@@ -103,9 +102,16 @@ class PlanService:
 
 
 class SubscriptionService:
-    @staticmethod
-    async def get_user_subscription(user_id: UUID, repo: SubscriptionRepoistory):
-        subscription = await repo.get_subscription_with_access(user_id)
+    def __init__(self, subscription_repo: SubscriptionRepoistory,
+        plan_repo: PlanRepository, user_repo: UserRepository, payment_repo: PaymentRepository) -> None:
+        self.subscription_repo = subscription_repo
+        self.plan_repo = plan_repo
+        self.user_repo = user_repo
+        self.payment_repo = payment_repo
+
+        
+    async def get_user_subscription(self, user_id: UUID):
+        subscription = await self.subscription_repo.get_subscription_with_access(user_id)
         if not subscription:
             logger.warning(f"No active subscription found for user_id={user_id}")
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active subscription found for this user.")
@@ -116,29 +122,27 @@ class SubscriptionService:
         return subscription
     
 
-    @staticmethod 
-    async def subscribe_user_to_plan(user: User, plan_code: str,
-        sub_repo: SubscriptionRepoistory, plan_repo: PlanRepository, user_repo: UserRepository):
+    async def subscribe_user_to_plan(self, user: User, plan_code: str):
         logger.info("Creating subscription", user_id=user.id, plan_code=plan_code)
 
         logger.info(
             f"Creating subscription user_id={str(user.id)}, email={user.email}, plan_code={plan_code}"
         )
-        exisitng_sub = await sub_repo.get_subscription_with_access(user.id)
+        exisitng_sub = await self.subscription_repo.get_subscription_with_access(user.id)
         if exisitng_sub:
             logger.warning(
                 f"Subscription creation rejected: user already has active subscription "
                 f"user_id={str(user.id)}, subscription_id={exisitng_sub.id}"
             )
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already has an active subscription.")
-        plan = await plan_repo.get_by_code(plan_code)
+        plan = await self.plan_repo.get_by_code(plan_code)
         if not plan:
             logger.warning(
                 f"Subscription creation failed: plan not found plan_code={plan_code}, user_id={str(user.id)}"
             )
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active plan found for this code.")
         
-        checkout_url = await StripeGateway.create_subscription_checkout_session(user, plan, user_repo)
+        checkout_url = await StripeGateway.create_subscription_checkout_session(user, plan, self.user_repo)
         logger.info(
             f"Stripe checkout session created for subscription user_id={str(user.id)}, "
             f"email={user.email}, plan_code={plan_code}"
@@ -146,12 +150,11 @@ class SubscriptionService:
         return checkout_url
 
     
-    @staticmethod
-    async def cancel_subscription_at_end_of_period(user_id: UUID, sub_repo: SubscriptionRepoistory):
+    async def cancel_subscription_at_end_of_period(self, user_id: UUID):
         logger.info(
             f"Cancel subscription at period end requested user_id={str(user_id)}"
         )
-        sub = await sub_repo.get_subscription_with_access(user_id)
+        sub = await self.subscription_repo.get_subscription_with_access(user_id)
         if not sub:
             logger.warning(
                 f"Cancel subscription failed: no active subscription user_id={str(user_id)}"
@@ -168,7 +171,7 @@ class SubscriptionService:
         if sub.provider == PaymentProvider.STRIPE:
             canceled_at, current_period_end = await StripeGateway.cancel_subscription_at_period_end(sub)
 
-        updated_sub = await sub_repo.cancel_subscription(
+        updated_sub = await self.subscription_repo.cancel_subscription(
             provider=sub.provider,
             provider_subscription_id=sub.provider_subscription_id,
             canceled_at=canceled_at,
@@ -191,23 +194,21 @@ class SubscriptionService:
         return updated_sub
 
 
-    @staticmethod
-    async def upgrade_subscription(user: User, new_plan_code: str, sub_repo: SubscriptionRepoistory, 
-                            plan_repo: PlanRepository, user_repo: UserRepository) :
+    async def upgrade_subscription(self, user: User, new_plan_code: str) :
         
         logger.info(
             f"Upgrade subscription requested user_id={str(user.id)}, "
             f"email={user.email}, new_plan_code={new_plan_code}"
         )
 
-        current_sub = await sub_repo.get_subscription_with_access(user.id)
+        current_sub = await self.subscription_repo.get_subscription_with_access(user.id)
         if not current_sub:
             logger.warning(
                 f"Upgrade subscription failed: no active subscription user_id={str(user.id)}"
             )
             raise HTTPException(status_code=404, detail="No active subscription to upgrade.")
         
-        new_plan = await plan_repo.get_by_code(new_plan_code)
+        new_plan = await self.plan_repo.get_by_code(new_plan_code)
         if not new_plan:
             logger.warning(
                 f"Upgrade subscription failed: plan not found user_id={str(user.id)}, "
@@ -223,7 +224,7 @@ class SubscriptionService:
             raise HTTPException(status_code=400, detail="You are already on this plan.")
         
         if current_sub.provider == PaymentProvider.STRIPE:
-            checkout_url = await StripeGateway.create_subscription_checkout_session(user, new_plan, user_repo,current_sub.provider_subscription_id)
+            checkout_url = await StripeGateway.create_subscription_checkout_session(user, new_plan, self.user_repo,current_sub.provider_subscription_id)
 
         logger.info(
             f"Stripe checkout session created for upgrade user_id={str(user.id)}, "
@@ -232,9 +233,7 @@ class SubscriptionService:
         return checkout_url
 
 
-    @staticmethod
-    async def stripe_webhook(request, stripe_signature, sub_repo: SubscriptionRepoistory,
-        plan_repo: PlanRepository, payment_repo: PaymentRepository):
+    async def stripe_webhook(self, request, stripe_signature):
         payload = await request.body()
         try:
             event = await run_in_threadpool(
@@ -256,7 +255,7 @@ class SubscriptionService:
             logger.info(
                 f"Handling checkout.session.completed for session_id={session.get('id')}"
             )
-            sub = await StripeGateway.user_subscribe(session, sub_repo, plan_repo)
+            sub = await StripeGateway.user_subscribe(session, self.subscription_repo, self.plan_repo)
             if sub:
                 logger.info(
                     f"User subscribed from checkout.session.completed subscription_id={sub.id}, "
@@ -271,8 +270,8 @@ class SubscriptionService:
                 f"Handling invoice.payment_succeeded invoice_id={invoice.get('id')}, "
                 f"billing_reason={billing_reason}"
             )
-            sub = await StripeGateway.handle_invoice_payment_succeeded(invoice, sub_repo)
-            await StripeGateway.record_invoice_payment(invoice, sub, payment_repo)
+            sub = await StripeGateway.handle_invoice_payment_succeeded(invoice, self.subscription_repo)
+            await StripeGateway.record_invoice_payment(invoice, sub, self.payment_repo)
             if billing_reason == "subscription_cycle":
                 logger.info(
                     f"Sending update subscription email subscription_id={sub.id}, " #type:ignore
@@ -292,7 +291,7 @@ class SubscriptionService:
             logger.info(
                 f"Handling customer.subscription.deleted stripe_subscription_id={stripe_subscription.get('id')}"
             )
-            sub = await StripeGateway.handle_subscription_deleted(stripe_subscription, sub_repo)
+            sub = await StripeGateway.handle_subscription_deleted(stripe_subscription, self.subscription_repo)
             try:
                 logger.info(
                     f"Sending cancel subscription email subscription_id={sub.id}, "
@@ -310,7 +309,7 @@ class SubscriptionService:
             logger.warning(
                 f"Handling invoice.payment_failed invoice_id={invoice.get('id')}"
             )
-            sub = await StripeGateway.handle_invoice_payment_failed(invoice, sub_repo)
+            sub = await StripeGateway.handle_invoice_payment_failed(invoice, self.subscription_repo)
             if sub:
                 logger.warning(
                     f"Sending payment failed email subscription_id={sub.id}, "
@@ -321,9 +320,12 @@ class SubscriptionService:
 
 
 class PaymentService:
-    @staticmethod
-    async def get_my_payments(user: User, payment_repo: PaymentRepository):
-        payments = await payment_repo.get_my_payments(user.id)
+    def __init__(self, payment_repo: PaymentRepository) -> None:
+        self.payment_repo = payment_repo
+
+
+    async def get_my_payments(self, user: User):
+        payments = await self.payment_repo.get_my_payments(user.id)
         logger.info(
                 f"Retrieved payments for user_id={str(user.id)}, count={len(payments)}"
             )

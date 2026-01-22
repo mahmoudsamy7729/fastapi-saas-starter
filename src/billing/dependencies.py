@@ -2,16 +2,42 @@ from typing import Annotated, Tuple
 from fastapi import Depends, HTTPException, status
 from src.billing.repository import PlanRepository, SubscriptionRepoistory, PaymentRepository
 from src.database import db_dependency
-from typing import Callable, Awaitable, Tuple
+from typing import Tuple
 from src.auth.models import User
 from src.billing.models import Subscription, Plan, PlanTier
 from src.auth_bearer import user_dependency
+from src.billing.service import PlanService, SubscriptionService, PaymentService
 
 
 def get_plan_repo(db: db_dependency) -> PlanRepository:
     return PlanRepository(db)
 
+
 plan_dependency = Annotated[PlanRepository, Depends(get_plan_repo)]
+
+
+def get_plan_service(plan_dep: plan_dependency) -> PlanService:
+    return PlanService(plan_dep)
+
+
+PlanServiceDep = Annotated[PlanService, Depends(get_plan_service)]
+
+
+
+
+def get_payment_repo(db: db_dependency)-> PaymentRepository:
+    return PaymentRepository(db)
+
+payment_dependency = Annotated[PaymentRepository, Depends(get_payment_repo)]
+
+
+def get_payment_service(payment_dep: payment_dependency) -> PaymentService:
+    return PaymentService(payment_dep)
+
+
+PaymentServiceDep = Annotated[PaymentService, Depends(get_payment_service)]
+
+
 
 def get_subscription_repo(db: db_dependency) -> SubscriptionRepoistory:
     return SubscriptionRepoistory(db)
@@ -19,10 +45,17 @@ def get_subscription_repo(db: db_dependency) -> SubscriptionRepoistory:
 subscription_dependency = Annotated[SubscriptionRepoistory, Depends(get_subscription_repo)]
 
 
-def get_payment_repo(db: db_dependency)-> PaymentRepository:
-    return PaymentRepository(db)
+def get_subscription_service(subscription_dep: subscription_dependency, plan_dep: plan_dependency,
+                payment_dep: payment_dependency, user_dep: user_dependency) -> SubscriptionService:
+    return SubscriptionService(subscription_dep, plan_dep, user_dep, payment_dep)
 
-payment_dependency = Annotated[PaymentRepository, Depends(get_payment_repo)]
+
+SubscriptionServiceDep = Annotated[SubscriptionService, Depends(get_subscription_service)]
+
+
+
+
+
 
 
 def require_plan(min_plan: PlanTier):

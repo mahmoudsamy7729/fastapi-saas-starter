@@ -28,7 +28,8 @@ async def test_retrieve_plans():
     repo = Mock()
     repo.list_plans = AsyncMock(return_value=["p1", "p2"])
 
-    result = await PlanService.retrive_plans(repo)
+    service = PlanService(repo)
+    result = await service.retrive_plans()
 
     assert result == ["p1", "p2"]
     repo.list_plans.assert_awaited_once()
@@ -63,7 +64,8 @@ async def test_create_plan_updates_stripe_ids(monkeypatch):
 
     data = PlanCreate(code="BASIC", price_cents=10, name="Basic", billing_period=BillingPeriod.MONTHLY)
 
-    result = await PlanService.create_plan(data, repo)
+    service = PlanService(repo)
+    result = await service.create_plan(data)
 
     assert result == updated_plan
     repo.update.assert_awaited_once_with(created_plan, {"stripe_product_id": "prod_1", "stripe_price_id": "price_1"})
@@ -80,7 +82,8 @@ async def test_create_plan_skips_stripe_when_failing(monkeypatch):
 
     data = PlanCreate(code="BASIC", price_cents=10, name="Basic", billing_period=BillingPeriod.MONTHLY)
 
-    result = await PlanService.create_plan(data, repo)
+    service = PlanService(repo)
+    result = await service.create_plan(data)
 
     assert result == created_plan
     repo.update.assert_not_called()
@@ -93,7 +96,8 @@ async def test_create_plan_duplicate_code():
     data = PlanCreate(code="BASIC", price_cents=10, name="Basic", billing_period=BillingPeriod.MONTHLY)
 
     with pytest.raises(HTTPException) as exc:
-        await PlanService.create_plan(data, repo)
+        service = PlanService(repo)
+        await service.create_plan(data)
 
     assert exc.value.status_code == 400
     assert exc.value.detail == "Existing Code"
@@ -104,7 +108,8 @@ async def test_get_plan_not_found():
     repo.get_by_id = AsyncMock(return_value=None)
 
     with pytest.raises(HTTPException):
-        await PlanService.get_plan_by_id(uuid4(), repo)
+        service = PlanService(repo)
+        await service.get_plan_by_id(uuid4())
 
 
 async def test_update_plan_success(monkeypatch):
@@ -118,7 +123,8 @@ async def test_update_plan_success(monkeypatch):
 
     data = PlanUpdate(price_cents=25)
 
-    result = await PlanService.update_plan(uuid4(), data, repo)
+    service = PlanService(repo)
+    result = await service.update_plan(uuid4(), data)
 
     assert result.updated is True
     repo.update.assert_awaited_once_with(plan, update_data)
@@ -130,7 +136,8 @@ async def test_soft_delete_plan_success():
     repo.get_by_id = AsyncMock(return_value=plan)
     repo.soft_delete = AsyncMock()
 
-    await PlanService.soft_delete_plan(uuid4(), repo)
+    service = PlanService(repo)
+    await service.soft_delete_plan(uuid4())
 
     repo.soft_delete.assert_awaited_once()
 
@@ -141,7 +148,8 @@ async def test_soft_delete_already_deleted():
     repo.get_by_id = AsyncMock(return_value=plan)
 
     with pytest.raises(HTTPException) as exc:
-        await PlanService.soft_delete_plan(uuid4(), repo)
+        service = PlanService(repo)
+        await service.soft_delete_plan(uuid4())
 
     assert exc.value.status_code == 400
     assert exc.value.detail == "Plan already deleted."
@@ -152,7 +160,8 @@ async def test_soft_delete_plan_not_found():
     repo.get_by_id = AsyncMock(return_value=None)
 
     with pytest.raises(HTTPException) as exc:
-        await PlanService.soft_delete_plan(uuid4(), repo)
+        service = PlanService(repo)
+        await service.soft_delete_plan(uuid4())
 
     assert exc.value.status_code == 404
 
@@ -163,7 +172,8 @@ async def test_get_user_subscription_success():
     repo.get_subscription_with_access = AsyncMock(return_value=subscription_obj)
 
     user_id = uuid4()
-    result = await SubscriptionService.get_user_subscription(user_id, repo)
+    service = SubscriptionService(repo, Mock(), Mock(), Mock())
+    result = await service.get_user_subscription(user_id)
 
     assert result == subscription_obj
     repo.get_subscription_with_access.assert_awaited_once_with(user_id)
@@ -174,7 +184,8 @@ async def test_get_user_subscription_not_found():
     repo.get_subscription_with_access = AsyncMock(return_value=None)
 
     with pytest.raises(HTTPException):
-        await SubscriptionService.get_user_subscription(uuid4(), repo)
+        service = SubscriptionService(repo, Mock(), Mock(), Mock())
+        await service.get_user_subscription(uuid4())
 
 
 async def test_subscribe_user_success(monkeypatch):
@@ -192,9 +203,8 @@ async def test_subscribe_user_success(monkeypatch):
     checkout_mock = AsyncMock(return_value="https://stripe.test/checkout")
     monkeypatch.setattr("src.billing.service.StripeGateway.create_subscription_checkout_session", checkout_mock)
 
-    result = await SubscriptionService.subscribe_user_to_plan(
-        user, "BASIC", sub_repo, plan_repo, user_repo
-    )
+    service = SubscriptionService(sub_repo, plan_repo, user_repo, Mock())
+    result = await service.subscribe_user_to_plan(user, "BASIC")
 
     assert result == "https://stripe.test/checkout"
     checkout_mock.assert_awaited_once_with(user, plan, user_repo)
@@ -205,9 +215,8 @@ async def test_subscribe_user_already_has_subscription():
     sub_repo.get_subscription_with_access = AsyncMock(return_value=SimpleNamespace(id=uuid4()))
 
     with pytest.raises(HTTPException) as exc:
-        await SubscriptionService.subscribe_user_to_plan(
-            SimpleNamespace(id=uuid4(), email="u@test.com"), "BASIC", sub_repo, Mock(), Mock()
-        )
+        service = SubscriptionService(sub_repo, Mock(), Mock(), Mock())
+        await service.subscribe_user_to_plan(SimpleNamespace(id=uuid4(), email="u@test.com"), "BASIC")
 
     assert exc.value.detail == "User already has an active subscription."
 
@@ -220,9 +229,8 @@ async def test_subscribe_user_plan_not_found():
     plan_repo.get_by_code = AsyncMock(return_value=None)
 
     with pytest.raises(HTTPException) as exc:
-        await SubscriptionService.subscribe_user_to_plan(
-            SimpleNamespace(id=uuid4(), email="u@test.com"), "UNKNOWN", sub_repo, plan_repo, Mock()
-        )
+        service = SubscriptionService(sub_repo, plan_repo, Mock(), Mock())
+        await service.subscribe_user_to_plan(SimpleNamespace(id=uuid4(), email="u@test.com"), "UNKNOWN")
 
     assert exc.value.detail == "No active plan found for this code."
 
@@ -252,7 +260,8 @@ async def test_cancel_subscription_success(monkeypatch):
         AsyncMock(return_value=(datetime.now(timezone.utc), subscription.current_period_end)),
     )
 
-    result = await SubscriptionService.cancel_subscription_at_end_of_period(uuid4(), sub_repo)
+    service = SubscriptionService(sub_repo, Mock(), Mock(), Mock())
+    result = await service.cancel_subscription_at_end_of_period(uuid4())
 
     assert result.cancel_at_period_end is False
     sub_repo.cancel_subscription.assert_awaited_once_with(
@@ -269,7 +278,8 @@ async def test_cancel_subscription_already_marked():
     sub_repo.get_subscription_with_access = AsyncMock(return_value=subscription)
 
     with pytest.raises(HTTPException) as exc:
-        await SubscriptionService.cancel_subscription_at_end_of_period(uuid4(), sub_repo)
+        service = SubscriptionService(sub_repo, Mock(), Mock(), Mock())
+        await service.cancel_subscription_at_end_of_period(uuid4())
 
     assert exc.value.detail == "Subscription is already set to cancel at the end of the billing period."
 
@@ -279,7 +289,8 @@ async def test_cancel_subscription_not_found():
     sub_repo.get_subscription_with_access = AsyncMock(return_value=None)
 
     with pytest.raises(HTTPException) as exc:
-        await SubscriptionService.cancel_subscription_at_end_of_period(uuid4(), sub_repo)
+        service = SubscriptionService(sub_repo, Mock(), Mock(), Mock())
+        await service.cancel_subscription_at_end_of_period(uuid4())
 
     assert exc.value.status_code == 404
 
@@ -301,7 +312,8 @@ async def test_cancel_subscription_missing_local_record(monkeypatch):
     )
 
     with pytest.raises(HTTPException) as exc:
-        await SubscriptionService.cancel_subscription_at_end_of_period(uuid4(), sub_repo)
+        service = SubscriptionService(sub_repo, Mock(), Mock(), Mock())
+        await service.cancel_subscription_at_end_of_period(uuid4())
 
     assert exc.value.status_code == 404
     assert exc.value.detail == "Subscription not found in our database."
@@ -325,7 +337,8 @@ async def test_upgrade_subscription_success(monkeypatch):
     checkout_mock = AsyncMock(return_value="https://stripe.test/upgrade")
     monkeypatch.setattr("src.billing.service.StripeGateway.create_subscription_checkout_session", checkout_mock)
 
-    result = await SubscriptionService.upgrade_subscription(user, "NEW", sub_repo, plan_repo, user_repo)
+    service = SubscriptionService(sub_repo, plan_repo, user_repo, Mock())
+    result = await service.upgrade_subscription(user, "NEW")
 
     assert result == "https://stripe.test/upgrade"
     checkout_mock.assert_awaited_once_with(user, new_plan, user_repo, current_sub.provider_subscription_id)
@@ -341,7 +354,8 @@ async def test_upgrade_subscription_same_plan():
     plan_repo.get_by_code = AsyncMock(return_value=SimpleNamespace(id=plan_id))
 
     with pytest.raises(HTTPException) as exc:
-        await SubscriptionService.upgrade_subscription(SimpleNamespace(id=uuid4(), email="u@test.com"), "CODE", sub_repo, plan_repo, Mock())
+        service = SubscriptionService(sub_repo, plan_repo, Mock(), Mock())
+        await service.upgrade_subscription(SimpleNamespace(id=uuid4(), email="u@test.com"), "CODE")
 
     assert exc.value.detail == "You are already on this plan."
 
@@ -354,7 +368,8 @@ async def test_upgrade_subscription_plan_not_found():
     plan_repo.get_by_code = AsyncMock(return_value=None)
 
     with pytest.raises(HTTPException) as exc:
-        await SubscriptionService.upgrade_subscription(SimpleNamespace(id=uuid4(), email="u@test.com"), "CODE", sub_repo, plan_repo, Mock())
+        service = SubscriptionService(sub_repo, plan_repo, Mock(), Mock())
+        await service.upgrade_subscription(SimpleNamespace(id=uuid4(), email="u@test.com"), "CODE")
 
     assert exc.value.detail == "Plan not found."
 
@@ -364,7 +379,8 @@ async def test_upgrade_subscription_no_active():
     sub_repo.get_subscription_with_access = AsyncMock(return_value=None)
 
     with pytest.raises(HTTPException) as exc:
-        await SubscriptionService.upgrade_subscription(SimpleNamespace(id=uuid4(), email="u@test.com"), "CODE", sub_repo, Mock(), Mock())
+        service = SubscriptionService(sub_repo, Mock(), Mock(), Mock())
+        await service.upgrade_subscription(SimpleNamespace(id=uuid4(), email="u@test.com"), "CODE")
 
     assert exc.value.detail == "No active subscription to upgrade."
 
@@ -382,7 +398,8 @@ async def test_stripe_webhook_checkout_creates_subscription(monkeypatch, mock_us
     plan_repo = Mock()
     payment_repo = Mock()
 
-    result = await SubscriptionService.stripe_webhook(request, "sig", sub_repo, plan_repo, payment_repo)
+    service = SubscriptionService(sub_repo, plan_repo, Mock(), payment_repo)
+    result = await service.stripe_webhook(request, "sig")
 
     assert result is None
     mock_user_subscribe.assert_awaited_once_with(event["data"]["object"], sub_repo, plan_repo)
@@ -427,7 +444,8 @@ async def test_stripe_webhook_invoice_payment(monkeypatch, mock_send_update_subs
     sub_repo = Mock()
     payment_repo = Mock()
 
-    result = await SubscriptionService.stripe_webhook(request, "sig", sub_repo, Mock(), payment_repo)
+    service = SubscriptionService(sub_repo, Mock(), Mock(), payment_repo)
+    result = await service.stripe_webhook(request, "sig")
 
     assert result is None
     handle_payment_mock.assert_awaited_once_with(invoice, sub_repo)
@@ -459,7 +477,8 @@ async def test_stripe_webhook_invoice_payment_failed(monkeypatch, mock_send_paym
     request = _dummy_request(b"{}")
     sub_repo = Mock()
 
-    result = await SubscriptionService.stripe_webhook(request, "sig", sub_repo, Mock(), Mock())
+    service = SubscriptionService(sub_repo, Mock(), Mock(), Mock())
+    result = await service.stripe_webhook(request, "sig")
 
     assert result is None
     handler.assert_awaited_once_with(invoice, sub_repo)
@@ -482,7 +501,8 @@ async def test_stripe_webhook_invoice_payment_failed_without_subscription(monkey
     request = _dummy_request(b"{}")
     sub_repo = Mock()
 
-    result = await SubscriptionService.stripe_webhook(request, "sig", sub_repo, Mock(), Mock())
+    service = SubscriptionService(sub_repo, Mock(), Mock(), Mock())
+    result = await service.stripe_webhook(request, "sig")
 
     assert result is None
     handler.assert_awaited_once_with(invoice, sub_repo)
@@ -509,7 +529,8 @@ async def test_stripe_webhook_subscription_deleted(monkeypatch, mock_send_cancel
     sub_repo = Mock()
     payment_repo = Mock()
 
-    result = await SubscriptionService.stripe_webhook(request, "sig", sub_repo, Mock(), payment_repo)
+    service = SubscriptionService(sub_repo, Mock(), Mock(), payment_repo)
+    result = await service.stripe_webhook(request, "sig")
 
     assert result is None
     handler.assert_awaited_once_with(event["data"]["object"], sub_repo)
@@ -522,7 +543,8 @@ async def test_stripe_webhook_invalid_signature(monkeypatch):
     monkeypatch.setattr("src.billing.service.run_in_threadpool", run_mock)
 
     request = _dummy_request(b"{}")
-    response = await SubscriptionService.stripe_webhook(request, "sig", Mock(), Mock(), Mock())
+    service = SubscriptionService(Mock(), Mock(), Mock(), Mock())
+    response = await service.stripe_webhook(request, "sig")
 
     assert response == {"error": "bad signature"}
 
@@ -532,7 +554,8 @@ async def test_payment_service_get_my_payments():
     repo = Mock()
     repo.get_my_payments = AsyncMock(return_value=["payment1", "payment2"])
 
-    result = await PaymentService.get_my_payments(user, repo)
+    service = PaymentService(repo)
+    result = await service.get_my_payments(user)
 
     assert result == ["payment1", "payment2"]
     repo.get_my_payments.assert_awaited_once_with(user.id)

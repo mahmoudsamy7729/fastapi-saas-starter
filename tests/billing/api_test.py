@@ -175,6 +175,7 @@ async def test_subscribe_to_plan_starts_checkout(client: AsyncClient, logged_in_
 @pytest.mark.asyncio
 async def test_stripe_webhook_checkout_triggers_email(
     client: AsyncClient,
+    user_headers,
     mock_user_subscribe,
     monkeypatch,
 ):
@@ -188,7 +189,7 @@ async def test_stripe_webhook_checkout_triggers_email(
     response = await client.post(
         "/billing/stripe/webhook",
         content=json.dumps(event_payload),
-        headers={"Stripe-Signature": "sig"},
+        headers={**user_headers, "Stripe-Signature": "sig"},
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -199,6 +200,7 @@ async def test_stripe_webhook_checkout_triggers_email(
 @pytest.mark.asyncio
 async def test_stripe_webhook_invoice_payment_triggers_update_email(
     client: AsyncClient,
+    user_headers,
     mock_send_update_subscription_email_task,
     monkeypatch,
 ):
@@ -236,7 +238,7 @@ async def test_stripe_webhook_invoice_payment_triggers_update_email(
     response = await client.post(
         "/billing/stripe/webhook",
         content=json.dumps(event_payload),
-        headers={"Stripe-Signature": "sig"},
+        headers={**user_headers, "Stripe-Signature": "sig"},
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -249,6 +251,7 @@ async def test_stripe_webhook_invoice_payment_triggers_update_email(
 @pytest.mark.asyncio
 async def test_stripe_webhook_invoice_payment_failed_sends_email(
     client: AsyncClient,
+    user_headers,
     mock_send_payment_failed_email_task,
     monkeypatch,
 ):
@@ -280,7 +283,7 @@ async def test_stripe_webhook_invoice_payment_failed_sends_email(
     response = await client.post(
         "/billing/stripe/webhook",
         content=json.dumps(event_payload),
-        headers={"Stripe-Signature": "sig"},
+        headers={**user_headers, "Stripe-Signature": "sig"},
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -291,6 +294,7 @@ async def test_stripe_webhook_invoice_payment_failed_sends_email(
 @pytest.mark.asyncio
 async def test_stripe_webhook_subscription_deleted_sends_cancel_email(
     client: AsyncClient,
+    user_headers,
     mock_send_cancel_subscription_email_task,
     monkeypatch,
 ):
@@ -315,7 +319,7 @@ async def test_stripe_webhook_subscription_deleted_sends_cancel_email(
     response = await client.post(
         "/billing/stripe/webhook",
         content=json.dumps(event_payload),
-        headers={"Stripe-Signature": "sig"},
+        headers={**user_headers, "Stripe-Signature": "sig"},
     )
 
     assert response.status_code == status.HTTP_200_OK
