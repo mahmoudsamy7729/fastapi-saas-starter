@@ -1,5 +1,5 @@
 import time
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import ORJSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,7 +14,7 @@ from src.auth.router import router as auth_router
 from src.billing.router import router as billing_router
 from src.admin.router import router as admin_router
 from src.exceptions import validation_exception_handler
-from src.auth_bearer import admin_user_dependency
+from src.auth_bearer import admin_required
 
 
 setup_logging()

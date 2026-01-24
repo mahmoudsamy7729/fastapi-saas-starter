@@ -2,7 +2,8 @@ from uuid import UUID
 from typing import Optional
 from fastapi import APIRouter, Query
 from src.admin import dependencies
-from src.auth_bearer import admin_user_dependency
+from src.auth_bearer import admin_required
+from src.admin import schemas
 
 
 
@@ -56,7 +57,26 @@ async def get_user_subscriptions(user_dependency: dependencies.UsersServiceDep, 
     offset: int = Query(0, ge=0),):
     subscriptions = await user_dependency.get_user_subscriptions(user_id, limit=limit, offset=offset)
     return subscriptions
-    
+
+
+@router.patch("/users/{user_id}/status")
+async def update_user_status(user_dependency: dependencies.UsersServiceDep, user_id: UUID,
+    data: schemas.UpdateUserStatusIn):
+    updated_user = await user_dependency.update_user_status(user_id, data.is_active)
+    return updated_user
+
+
+@router.patch("/users/{user_id}/role")
+async def update_user_role(user_dependency: dependencies.UsersServiceDep, user_id: UUID,
+    data: schemas.UpdateUserRoleIn):
+    updated_user = await user_dependency.update_user_role(user_id, data.is_admin)
+    return updated_user
+
+
+@router.patch("/users/{user_id}/verify")
+async def verify_user(user_dependency: dependencies.UsersServiceDep, user_id: UUID):
+    updated_user = await user_dependency.verify_user(user_id)
+    return updated_user
 
 
 @router.get("/billing/transactions")

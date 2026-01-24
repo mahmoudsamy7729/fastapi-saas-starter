@@ -83,6 +83,27 @@ class AdminUserRepository:
         offset: int = 0):
         query = select(Payment).where(Payment.user_id == user_id).order_by(Payment.created_at.desc())
         return await paginate(self.db, query, limit=limit, offset=offset)
+    
+
+
+    async def update_user(self, user_id: UUID, **kwargs):
+        result = await self.db.execute(
+            select(User).where(User.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            return None
+        for key, value in kwargs.items():
+            if hasattr(user, key):
+                setattr(user, key, value)
+            else:
+                raise ValueError(f"Invalid field: {key}")
+        
+        await self.db.commit()
+        await self.db.refresh(user)
+
+        return user
 
 
 

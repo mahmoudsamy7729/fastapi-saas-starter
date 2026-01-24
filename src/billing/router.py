@@ -2,7 +2,7 @@ from uuid import UUID
 from src.rate_limiter import limiter
 from fastapi import APIRouter, status, Request, Header
 from src.billing import schemas
-from src.auth_bearer import  active_user_dep, admin_user_dependency
+from src.auth_bearer import  active_user_dep, admin_required
 from src.billing.dependencies import SubscriptionServiceDep, PlanServiceDep, PaymentServiceDep
 
 
@@ -17,7 +17,7 @@ async def list_plans(PlanService: PlanServiceDep):
 
 
 @router.post("/plans", response_model=schemas.PlanOut, status_code=status.HTTP_201_CREATED)
-async def create_plan(admin_user: admin_user_dependency, data: schemas.PlanCreate, PlanService: PlanServiceDep):
+async def create_plan(admin_user: admin_required, data: schemas.PlanCreate, PlanService: PlanServiceDep):
     result = await PlanService.create_plan(data)
     if result:
         return result
@@ -30,12 +30,12 @@ async def get_plan(plan_id: UUID, PlanService: PlanServiceDep):
 
 
 @router.delete("/plans/{plan_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_plan(admin_user: admin_user_dependency, plan_id: UUID, PlanService: PlanServiceDep):
+async def delete_plan(admin_user: admin_required, plan_id: UUID, PlanService: PlanServiceDep):
     result = await PlanService.soft_delete_plan(plan_id)
 
 
 @router.patch("/plans/{plan_id}", response_model=schemas.PlanOut, status_code=status.HTTP_200_OK)
-async def update_plan(admin_user: admin_user_dependency, plan_id: UUID, data: schemas.PlanUpdate, PlanService: PlanServiceDep):
+async def update_plan(admin_user: admin_required, plan_id: UUID, data: schemas.PlanUpdate, PlanService: PlanServiceDep):
     return await PlanService.update_plan(plan_id, data)
 
 
