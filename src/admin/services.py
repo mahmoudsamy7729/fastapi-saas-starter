@@ -93,3 +93,18 @@ class UsersService:
         offset: int = 0):
         subscriptions = await self.users_repo.get_user_subscriptions(user_id, limit=limit, offset=offset)
         return subscriptions
+    
+
+    async def update_user_status(self, user_id: UUID, is_active: bool):
+        updated_user = await self.users_repo.update_user(user_id, is_active=is_active)
+        return updated_user
+    
+
+    async def update_user_role(self, user_id: UUID, is_admin: bool):
+        updated_user = await self.users_repo.update_user(user_id, is_admin=is_admin)
+        return updated_user
+    
+
+    async def verify_user(self, user_id: UUID):
+        updated_user = await self.users_repo.update_user(user_id, is_verified=True)
+        return updated_user
