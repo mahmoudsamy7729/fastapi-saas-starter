@@ -2,8 +2,15 @@ from fastapi import Depends
 from typing import Annotated
 from src.admin import repository
 from src.database import db_dependency
-from src.admin.services import UsersService, PaymentsServices, SubscriptionsServices, AnalyticsService
+from src.admin.services import (UsersService, PaymentsServices, SubscriptionsServices, AnalyticsService)
 
+
+
+def get_admin_auditlog_dependency(db: db_dependency) -> repository.AdminAuditLogRepository:
+    return repository.AdminAuditLogRepository(db)
+
+
+auditlog_dependency = Annotated[repository.AdminAuditLogRepository, Depends(get_admin_auditlog_dependency)]
 
 
 def get_admin_user_dependency(db: db_dependency) -> repository.AdminUserRepository:
@@ -13,8 +20,8 @@ def get_admin_user_dependency(db: db_dependency) -> repository.AdminUserReposito
 user_dependency = Annotated[repository.AdminUserRepository, Depends(get_admin_user_dependency)]
 
 
-def get_users_service(users_repo: user_dependency) -> UsersService:
-    return UsersService(users_repo)
+def get_users_service(users_repo: user_dependency, auditlog_repo: auditlog_dependency) -> UsersService:
+    return UsersService(users_repo, auditlog_repo)
 
 
 UsersServiceDep = Annotated[UsersService,Depends(get_users_service)]

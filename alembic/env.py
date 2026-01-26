@@ -10,6 +10,7 @@ from src.database import Base
 from src.config import settings
 from src.auth import models as auth_models
 from src.billing import models as billing_models
+from src.admin import models as admin_models
 from src import models 
 
 
