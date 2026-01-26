@@ -1,5 +1,6 @@
 from uuid import UUID
-from src.admin.repository import AdminUserRepository, AdminPaymentRepository, AdminSubscriptionRepository
+from src.admin.repository import (AdminUserRepository, AdminPaymentRepository, 
+        AdminSubscriptionRepository, AdminAuditLogRepository)
 
 
 class AnalyticsService:
@@ -55,8 +56,9 @@ class PaymentsServices:
 
 
 class UsersService:
-    def __init__(self, users_repo: AdminUserRepository) -> None:
+    def __init__(self, users_repo: AdminUserRepository, auditlog_repo: AdminAuditLogRepository) -> None:
         self.users_repo = users_repo
+        self.auditlog_repo = auditlog_repo
 
     
     async def get_users(self, *,
@@ -95,16 +97,43 @@ class UsersService:
         return subscriptions
     
 
-    async def update_user_status(self, user_id: UUID, is_active: bool):
+    async def update_user_status(self, admin_id: UUID, user_id: UUID, is_active: bool):
+        user = await self.users_repo.get_user_by_id(user_id)
+        if not user:
+            pass
+
+        before = {"is_active": user['user'].is_active} #type: ignore
         updated_user = await self.users_repo.update_user(user_id, is_active=is_active)
+        after = {"is_active": updated_user.is_active} #type: ignore
+
+        await self.auditlog_repo.log(admin_id=admin_id, target_type="user", target_id=user_id,
+            action="user.update_status", before=before, after=after)
         return updated_user
     
 
-    async def update_user_role(self, user_id: UUID, is_admin: bool):
+    async def update_user_role(self, admin_id: UUID, user_id: UUID, is_admin: bool):
+        user = await self.users_repo.get_user_by_id(user_id)
+        if not user:
+            pass
+
+        before = {"is_admin": user['user'].is_admin} #type: ignore
         updated_user = await self.users_repo.update_user(user_id, is_admin=is_admin)
+        after = {"is_admin": updated_user.is_admin} #type: ignore
+
+        await self.auditlog_repo.log(admin_id=admin_id, target_type="user", target_id=user_id, 
+                    action="user.update_role", before=before, after=after)
         return updated_user
     
 
-    async def verify_user(self, user_id: UUID):
+    async def verify_user(self, admin_id: UUID, user_id: UUID):
+        user = await self.users_repo.get_user_by_id(user_id)
+        if not user:
+            pass
+
+        before = {"is_verified": user['user'].is_verified} #type: ignore
         updated_user = await self.users_repo.update_user(user_id, is_verified=True)
+        after = {"is_verified": updated_user.is_verified} #type: ignore
+
+        await self.auditlog_repo.log(admin_id=admin_id, target_type="user", target_id=user_id, 
+            action="user.verify", before=before, after=after)
         return updated_user

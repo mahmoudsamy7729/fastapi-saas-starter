@@ -60,22 +60,22 @@ async def get_user_subscriptions(user_dependency: dependencies.UsersServiceDep, 
 
 
 @router.patch("/users/{user_id}/status")
-async def update_user_status(user_dependency: dependencies.UsersServiceDep, user_id: UUID,
+async def update_user_status(admin: admin_required, user_dependency: dependencies.UsersServiceDep, user_id: UUID,
     data: schemas.UpdateUserStatusIn):
-    updated_user = await user_dependency.update_user_status(user_id, data.is_active)
+    updated_user = await user_dependency.update_user_status(admin.id, user_id, data.is_active)
     return updated_user
 
 
 @router.patch("/users/{user_id}/role")
-async def update_user_role(user_dependency: dependencies.UsersServiceDep, user_id: UUID,
+async def update_user_role(admin: admin_required, user_dependency: dependencies.UsersServiceDep, user_id: UUID,
     data: schemas.UpdateUserRoleIn):
-    updated_user = await user_dependency.update_user_role(user_id, data.is_admin)
+    updated_user = await user_dependency.update_user_role(admin.id, user_id, data.is_admin)
     return updated_user
 
 
 @router.patch("/users/{user_id}/verify")
-async def verify_user(user_dependency: dependencies.UsersServiceDep, user_id: UUID):
-    updated_user = await user_dependency.verify_user(user_id)
+async def verify_user(admin: admin_required, user_dependency: dependencies.UsersServiceDep, user_id: UUID):
+    updated_user = await user_dependency.verify_user(admin.id, user_id)
     return updated_user
 
 

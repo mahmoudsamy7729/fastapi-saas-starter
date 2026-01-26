@@ -4,6 +4,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.paginate import paginate
 
+from src.admin.models import AdminAuditLog
 from src.auth.models import User
 from src.billing.models import Subscription, Payment
 
@@ -85,7 +86,6 @@ class AdminUserRepository:
         return await paginate(self.db, query, limit=limit, offset=offset)
     
 
-
     async def update_user(self, user_id: UUID, **kwargs):
         result = await self.db.execute(
             select(User).where(User.id == user_id)
@@ -104,9 +104,6 @@ class AdminUserRepository:
         await self.db.refresh(user)
 
         return user
-
-
-
 
 
 
@@ -156,3 +153,72 @@ class AdminPaymentRepository:
         )
 
         return result.scalar_one_or_none()
+    
+
+
+class AdminAuditLogRepository:
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+
+
+    async def list_audit_logs(
+        self,
+        *,
+        admin_id: UUID | None = None,
+        target_type: str | None = None,
+        target_id: UUID | None = None,
+        action: str | None = None,
+        limit = 50,
+        offset = 0):
+
+        query = select(AdminAuditLog).order_by(AdminAuditLog.created_at.desc())
+
+        if admin_id is not None:
+            query = query.where(AdminAuditLog.admin_id == admin_id)
+        
+        if target_type is not None:
+            query = query.where(AdminAuditLog.target_type == target_type)
+        
+        if target_id is not None:
+            query = query.where(AdminAuditLog.target_id == target_id)
+        
+        if action is not None:
+            query = query.where(AdminAuditLog.action == action)
+        
+        return await paginate(self.db, query, limit=limit, offset=offset)
+    
+
+    async def log(
+        self,
+        *,
+        admin_id: UUID,
+        target_type: str,
+        target_id: UUID,
+        action: str,
+        before: dict | None = None,
+        after: dict | None = None,):
+
+        audit_log = AdminAuditLog(
+            admin_id=admin_id,
+            target_type=target_type,
+            target_id=target_id,
+            action=action,
+            before=before,
+            after=after,
+        )
+
+        self.db.add(audit_log)
+        await self.db.commit()
+        await self.db.refresh(audit_log)
+
+        return audit_log
+    
+
+    async def get_audit_log_by_id(self, log_id: UUID):
+        result = await self.db.execute(
+            select(AdminAuditLog).where(AdminAuditLog.id == log_id)
+        )
+
+        return result.scalar_one_or_none()
+    
+
