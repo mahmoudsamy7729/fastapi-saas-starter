@@ -27,6 +27,13 @@ def get_admin_auditlog_dependency(db: db_dependency) -> repository.AdminAuditLog
 auditlog_dependency = Annotated[repository.AdminAuditLogRepository, Depends(get_admin_auditlog_dependency)]
 
 
+def get_admin_auditlog_dependency(db: db_dependency) -> repository.AdminAuditLogRepository:
+    return repository.AdminAuditLogRepository(db)
+
+
+auditlog_dependency = Annotated[repository.AdminAuditLogRepository, Depends(get_admin_auditlog_dependency)]
+
+
 def get_admin_user_dependency(db: db_dependency) -> repository.AdminUserRepository:
     return repository.AdminUserRepository(db)
 
