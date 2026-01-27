@@ -1,6 +1,14 @@
+import json
 from uuid import UUID
+from src.admin.utils import json_safe
+from src.admin.ai_repo import ai_repo
 from src.admin.repository import (AdminUserRepository, AdminPaymentRepository, 
         AdminSubscriptionRepository, AdminAuditLogRepository)
+
+
+
+
+
 
 
 class AnalyticsService:
@@ -136,4 +144,87 @@ class UsersService:
 
         await self.auditlog_repo.log(admin_id=admin_id, target_type="user", target_id=user_id, 
             action="user.verify", before=before, after=after)
-        return updated_user
+        return updated_user  
+
+
+class AiSerivce:
+    def __init__(self, ai_repo: ai_repo, client, model: str, tools, system_message: str) -> None:
+        self.ai_repo = ai_repo
+        self.client = client
+        self.model = model
+        self.tools = tools
+        self.system_message = system_message
+
+
+    async def get_view_columns(self, view_name: str):
+        columns = await self.ai_repo.get_view_columns(view_name)
+        return columns
+    
+
+    async def execute_ai_sql(self, sql: str, mode: str):
+        result = await self.ai_repo.run_ai_sql(sql, mode=mode)
+        return result
+    
+
+    async def dispatch_tool(self, message):
+        responses = []
+        for tool_call in message.tool_calls:
+            name = tool_call.function.name
+            arguments = json.loads(tool_call.function.arguments or "{}")
+            if name == "get_view_columns":
+                view_name = arguments.get("view_name")
+                cols = await self.get_view_columns(view_name) #type: ignore
+                print(f"Columns for view {view_name}: {cols}")
+                responses.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": json.dumps({"columns": cols}, ensure_ascii=False)
+                })
+            elif name == "execute_sql":
+                sql = arguments.get("sql")
+                mode = arguments.get("mode", "preview")
+                result = await self.execute_ai_sql(sql, mode=mode) #type: ignore
+                responses.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": json.dumps(result, default=json_safe, ensure_ascii=False)
+                })
+            else:
+                raise ValueError(f"Unknown tool: {message}")
+            
+        return responses
+    
+
+    async def call_ai_model(self, prompt: str):
+        messages = [
+            {"role": "system", "content": self.system_message},
+            {"role": "user", "content": prompt}
+        ]
+
+        response = await self.client.chat.completions.create(
+            model = self.model,
+            messages = messages,
+            tools = self.tools
+        )
+        
+        while response.choices[0].finish_reason == "tool_calls":
+            print("finish_reason:", response.choices[0].finish_reason)
+
+            assistant_msg = response.choices[0].message
+
+            print("tool_calls:", [tc.function.name for tc in (assistant_msg.tool_calls or [])])
+
+            tool_responses = await self.dispatch_tool(assistant_msg)
+
+            messages.append(assistant_msg)
+            messages.extend(tool_responses)
+
+            response = await self.client.chat.completions.create(
+                model = self.model,
+                messages = messages,
+                tools= self.tools,
+                tool_choice="auto",
+            )
+
+        return response.choices[0].message.content
+

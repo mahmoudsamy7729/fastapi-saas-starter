@@ -1,10 +1,24 @@
 from fastapi import Depends
 from typing import Annotated
 from src.admin import repository
+from src.admin.ai_repo import ai_repo
 from src.database import db_dependency
-from src.admin.services import (UsersService, PaymentsServices, SubscriptionsServices, AnalyticsService)
+from src.admin.services import (UsersService, PaymentsServices,
+        SubscriptionsServices, AnalyticsService, AiSerivce)
+from src.admin.ai_settings import get_ai_client, ai_model, ai_tools, system
 
 
+def get_admin_ai_dependency(db: db_dependency) -> ai_repo:
+    return ai_repo(db)
+
+ai_dependency = Annotated[ai_repo, Depends(get_admin_ai_dependency)]
+
+
+def get_ai_service(ai_repo_dep: ai_dependency) -> AiSerivce:
+    client = get_ai_client()
+    return AiSerivce(ai_repo_dep, client, ai_model, ai_tools, system)
+
+AiServiceDep = Annotated[AiSerivce, Depends(get_ai_service)]
 
 def get_admin_auditlog_dependency(db: db_dependency) -> repository.AdminAuditLogRepository:
     return repository.AdminAuditLogRepository(db)

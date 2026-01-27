@@ -7,6 +7,7 @@ from src.settings.redis import RedisSettings
 from src.settings.celery import CelerySettings
 from src.auth.config import AuthSettings
 from src.settings.stripe import StripeSettings
+from src.admin.config import AiSettings
 
 
 
@@ -14,7 +15,7 @@ BASE_DIR = Path(__file__).parent.parent
 
 
 class Settings(AppSettings,DatabaseSettings,MailSettings,RedisSettings,
-    CelerySettings,AuthSettings, StripeSettings):
+    CelerySettings,AuthSettings, StripeSettings, AiSettings):
 
     model_config = SettingsConfigDict(env_file=".env",env_file_encoding="utf-8",
     extra="ignore",)

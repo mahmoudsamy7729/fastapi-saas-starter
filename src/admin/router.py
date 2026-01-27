@@ -4,6 +4,7 @@ from fastapi import APIRouter, Query
 from src.admin import dependencies
 from src.auth_bearer import admin_required
 from src.admin import schemas
+from openai import OpenAI
 
 
 
@@ -107,3 +108,9 @@ async def get_subscription_by_id(subscription_dependency: dependencies.SubScript
     sub_id: UUID):
     subscription = await subscription_dependency.get_subscription_by_id(sub_id)
     return subscription
+
+
+@router.post("/ai/chat")
+async def ai_chat(ai_service: dependencies.AiServiceDep, prompt: str):
+    response = await ai_service.call_ai_model(prompt)
+    return {"response": response}
