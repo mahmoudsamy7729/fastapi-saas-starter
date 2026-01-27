@@ -100,6 +100,12 @@ jobs:
           echo "STRIPE_WEBHOOK_SECRET=dummy" >> .env
 
 
+          echo "AI_PROVIDER=dummy" >> .env
+          echo "GROQ_API_KEY=dummy" >> .env
+          echo "GROQ_BASE_URL=dummy" >> .env
+          echo "AI_MODEL=dummy" >> .env
+
+
       - name: Run tests
         env:
           ENV: test
