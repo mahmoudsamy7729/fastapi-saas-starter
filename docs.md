@@ -88,14 +88,14 @@ An async FastAPI application that handles authentication and Stripe-backed subsc
 - Logging configured via `src/logging.py` to stdout and `logs/app.log` with rotation.
 
 ## Developer Workflow
-1. Install deps and create `.env` (see README).
-2. Run `alembic upgrade head` to create tables/seeds (plan seed migration exists under `alembic/versions`).
-3. Start services: `uvicorn src.main:app --reload`, Celery worker/beat, Postgres, and Redis.
+1. Install deps with `uv sync` and create `.env` (see README).
+2. Run `uv run alembic upgrade head` to create tables/seeds (plan seed migration exists under `alembic/versions`).
+3. Start services: `uv run uvicorn src.main:app --reload`, Celery worker/beat, Postgres, and Redis.
 4. Develop features in service/repository layers; add/extend Pydantic schemas and tests.
-5. Run `pytest` before merging; mock Stripe/email where needed.
+5. Run `uv run pytest` before merging; mock Stripe/email where needed.
 
 ## Testing Approach
-- Pytest with `pytest-asyncio`, httpx `AsyncClient` + `ASGITransport` hitting the FastAPI app directly.
+- Pytest via `uv run pytest` with `pytest-asyncio`, httpx `AsyncClient` + `ASGITransport` hitting the FastAPI app directly.
 - DB setup/teardown uses `TEST_DATABASE_URL` and creates/drops schema per session (`tests/conftest.py`).
 - Rate limiter disabled in tests; Stripe and email interactions are monkeypatched in billing/auth tests.
 

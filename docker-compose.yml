@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   api:
     build: .
@@ -9,8 +7,10 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
       - .:/app
 
@@ -18,27 +18,19 @@ services:
     image: postgres:16
     container_name: postgres_db
     restart: always
-    env_file: .env
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 1512
+      POSTGRES_USER: ${POSTGRES_USER:-dev_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-fastapi_saas}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
-  pgadmin:
-    image: dpage/pgadmin4
-    container_name: pgadmin
-    restart: always
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@example.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "5050:80"
-    depends_on:
-      - db
-
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dev_user}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7
@@ -46,7 +38,11 @@ services:
     restart: always
     ports:
       - "6379:6379"
-
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   celery:
     build: .
@@ -56,18 +52,19 @@ services:
     depends_on:
       - api
       - redis
-    command: celery -A src.celery_app.celery_app worker --loglevel=info
+    command: uv run celery -A src.celery_app.celery_app worker --loglevel=info
     volumes:
       - .:/app
 
   celery_beat:
     build: .
     container_name: fastapi_celery_beat
-    command: celery -A src.celery_app.beat_app beat --loglevel=info
+    restart: always
     env_file: .env
     depends_on:
       - api
       - redis
+    command: uv run celery -A src.celery_app.beat_app beat --loglevel=info
     volumes:
       - .:/app
 
