@@ -2,16 +2,15 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system build deps and uv (official installer)
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# Install system dependencies
+RUN apt-get update && apt-get install -y build-essential
 
-# Copy dependency files
-COPY pyproject.toml uv.lock /app/
+# Copy requirements
+COPY requirements/ /app/requirements/
 
-# Install dependencies
-RUN uv sync --frozen --no-dev
+
+RUN pip install --no-cache-dir -r requirements/requirements.txt
+
 
 # Copy project
 COPY . .
@@ -19,4 +18,6 @@ COPY . .
 # Expose API port
 EXPOSE 8000
 
-CMD ["uv", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
